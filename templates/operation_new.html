@@ -104,7 +104,8 @@ var STOCK_MAP = {{ stock_map | tojson }};
         <template x-for="(row, i) in rows" :key="i">
           <tr>
             <td>
-              <select name="product_id[]" x-model="row.pid" required style="width:100%"
+              <select name="product_id[]" x-model="row.pid" style="width:100%"
+                :required="rows.length === 1 || i < rows.length - 1"
                 :style="rowOverflow(row) ? 'border-color:var(--red)' : ''"
                 @change="tryAutoAdd(i)">
                 <option value="">— выберите товар —</option>
@@ -129,7 +130,8 @@ var STOCK_MAP = {{ stock_map | tojson }};
             </td>
             <td>
               <input type="number" name="quantity[]" x-model="row.qty"
-                min="0.001" step="any" required placeholder="0" style="font-family:var(--mono)"
+                min="0.001" step="any" placeholder="0" style="font-family:var(--mono)"
+                :required="rows.length === 1 || i < rows.length - 1"
                 :style="rowOverflow(row) ? 'border-color:var(--red)' : ''"
                 @change="tryAutoAdd(i)">
               <!-- Inline stock warning -->
