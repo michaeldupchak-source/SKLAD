@@ -27,6 +27,28 @@
   --mono: 'Space Mono', monospace;
   --sans: 'DM Sans', sans-serif;
 }
+
+/* ── Light theme ─────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg: #f0f2f7;
+  --surface: #ffffff;
+  --surface2: #e8ebf4;
+  --border: #d4d9e8;
+  --border2: #b8c0d8;
+  --text: #1a1d2e;
+  --text-muted: #5a6080;
+  --accent: #b8971e;
+  --accent-dim: rgba(184,151,30,0.12);
+  --green: #1a8f5c;
+  --green-dim: rgba(26,143,92,0.1);
+  --red: #c93055;
+  --red-dim: rgba(201,48,85,0.1);
+  --blue: #2e5fd4;
+}
+[data-theme="light"] select option { background: #ffffff; }
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: var(--border2); }
+[data-theme="light"] .logo-icon { color: #000; }
+[data-theme="light"] .topbar { box-shadow: 0 1px 0 var(--border); }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 15px; }
 body {
@@ -535,7 +557,10 @@ textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
 </head>
 <body x-data="{
   collapsed: localStorage.getItem('sidebar') === 'collapsed'
-}" x-init="$watch('collapsed', v => localStorage.setItem('sidebar', v ? 'collapsed' : 'open'))">
+}" x-init="
+  $watch('collapsed', v => localStorage.setItem('sidebar', v ? 'collapsed' : 'open'));
+  document.documentElement.setAttribute('data-theme', '{{ current_user.theme if current_user.is_authenticated else 'dark' }}');
+">
 
 <aside class="sidebar" :class="{ collapsed: collapsed }">
   <div class="sidebar-logo">
@@ -582,6 +607,11 @@ textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
       class="nav-link {% if request.endpoint == 'units' %}active{% endif %}">
       <span class="nav-icon">⊟</span><span class="nav-label"> Ед. измерения</span>
     </a>
+    <div class="nav-section">Система</div>
+    <a href="{{ url_for('settings') }}" data-label="Настройки"
+      class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}">
+      <span class="nav-icon">⚙</span><span class="nav-label"> Настройки</span>
+    </a>
   </nav>
   <div class="sidebar-footer">v1.0 · SQLite</div>
 </aside>
@@ -589,6 +619,27 @@ textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
 <div class="main" :class="{ 'sidebar-collapsed': collapsed }">
   <div class="topbar">
     <div class="breadcrumb">{% block breadcrumb %}<strong>WMS</strong>{% endblock %}</div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
+      {% if current_user.is_authenticated %}
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="width:28px;height:28px;border-radius:50%;background:var(--accent-dim);
+          border:1px solid rgba(232,196,74,0.25);display:flex;align-items:center;justify-content:center;
+          font-family:var(--mono);font-size:0.7rem;color:var(--accent);font-weight:700">
+          {{ current_user.username[0].upper() }}
+        </div>
+        <span style="font-size:0.8rem;color:var(--text-muted);font-family:var(--mono)">{{ current_user.username }}</span>
+        {% if current_user.role == 'admin' %}
+        <span style="font-size:0.6rem;font-family:var(--mono);color:var(--accent);
+          background:var(--accent-dim);border:1px solid rgba(232,196,74,0.2);
+          border-radius:4px;padding:1px 6px">ADMIN</span>
+        {% endif %}
+      </div>
+      <form method="post" action="{{ url_for('logout') }}" style="margin:0">
+        <button type="submit" class="btn btn-ghost btn-sm" title="Выйти"
+          style="padding:5px 9px;font-size:0.8rem">⎋ Выйти</button>
+      </form>
+      {% endif %}
+    </div>
   </div>
   <div class="content">
     {% block content %}{% endblock %}

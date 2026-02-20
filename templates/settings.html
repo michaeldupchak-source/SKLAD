@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Настройки{% endblock %}
+{% block breadcrumb %}<strong>Настройки</strong>{% endblock %}
+
+{% block content %}
+{% with messages = get_flashed_messages() %}
+{% if messages %}
+<div style="background:rgba(62,207,142,0.1);border:1px solid rgba(62,207,142,0.35);border-radius:8px;
+  padding:12px 16px;font-size:0.85rem;color:var(--green);margin-bottom:20px;display:flex;align-items:center;gap:10px">
+  <span>✓</span> {{ messages[0] }}
+</div>
+{% endif %}
+{% endwith %}
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
+
+<!-- Left column -->
+<div>
+
+<!-- Timezone -->
+<div class="card mb-20">
+  <div class="card-title" style="margin-bottom:16px">Часовой пояс</div>
+  <form method="post">
+    <input type="hidden" name="action" value="timezone">
+    <div class="form-group mb-0">
+      <label>Часовой пояс склада</label>
+      <select name="timezone">
+        {% for tz_val, tz_label in timezones %}
+        <option value="{{ tz_val }}" {% if tz_val == tz_name %}selected{% endif %}>{{ tz_label }}</option>
+        {% endfor %}
+      </select>
+      <div style="font-size:0.72rem;color:var(--text-muted);margin-top:6px;font-family:var(--mono)">
+        Текущий: <span style="color:var(--accent)">{{ tz_name }}</span>
+      </div>
+    </div>
+    <div style="margin-top:14px">
+      <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
+    </div>
+  </form>
+</div>
+
+<!-- Theme -->
+<div class="card mb-20">
+  <div class="card-title" style="margin-bottom:16px">Тема оформления</div>
+  <form method="post">
+    <input type="hidden" name="action" value="theme">
+    <div style="display:flex;gap:12px;margin-bottom:16px">
+      <label style="cursor:pointer;flex:1">
+        <input type="radio" name="theme" value="dark" {% if current_theme=='dark' %}checked{% endif %} style="display:none" class="theme-radio">
+        <div class="theme-card" data-theme-val="dark" style="border:2px solid {% if current_theme=='dark' %}var(--accent){% else %}var(--border){% endif %};
+          border-radius:8px;padding:16px;background:{% if current_theme=='dark' %}var(--accent-dim){% else %}transparent{% endif %};
+          transition:all 0.15s;cursor:pointer">
+          <div style="width:100%;height:48px;background:#0d0f12;border-radius:5px;margin-bottom:8px;
+            display:flex;gap:6px;padding:8px;box-sizing:border-box">
+            <div style="width:30%;background:#141720;border-radius:3px"></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+              <div style="height:8px;background:#1c2030;border-radius:2px"></div>
+              <div style="height:8px;background:#1c2030;border-radius:2px;width:70%"></div>
+            </div>
+          </div>
+          <div style="font-size:0.8rem;font-weight:600;text-align:center">Тёмная</div>
+          {% if current_theme=='dark' %}
+          <div style="text-align:center;margin-top:4px;font-size:0.65rem;font-family:var(--mono);color:var(--accent)">АКТИВНА</div>
+          {% endif %}
+        </div>
+      </label>
+      <label style="cursor:pointer;flex:1">
+        <input type="radio" name="theme" value="light" {% if current_theme=='light' %}checked{% endif %} style="display:none" class="theme-radio">
+        <div class="theme-card" data-theme-val="light" style="border:2px solid {% if current_theme=='light' %}var(--accent){% else %}var(--border){% endif %};
+          border-radius:8px;padding:16px;background:{% if current_theme=='light' %}var(--accent-dim){% else %}transparent{% endif %};
+          transition:all 0.15s;cursor:pointer">
+          <div style="width:100%;height:48px;background:#f5f6fa;border-radius:5px;margin-bottom:8px;
+            display:flex;gap:6px;padding:8px;box-sizing:border-box">
+            <div style="width:30%;background:#e8eaf0;border-radius:3px"></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+              <div style="height:8px;background:#dde0ea;border-radius:2px"></div>
+              <div style="height:8px;background:#dde0ea;border-radius:2px;width:70%"></div>
+            </div>
+          </div>
+          <div style="font-size:0.8rem;font-weight:600;text-align:center">Светлая</div>
+          {% if current_theme=='light' %}
+          <div style="text-align:center;margin-top:4px;font-size:0.65rem;font-family:var(--mono);color:var(--accent)">АКТИВНА</div>
+          {% endif %}
+        </div>
+      </label>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">Применить тему</button>
+  </form>
+</div>
+
+<!-- Change password -->
+<div class="card">
+  <div class="card-title" style="margin-bottom:16px">Смена пароля</div>
+  <form method="post">
+    <input type="hidden" name="action" value="change_password">
+    <div class="form-group">
+      <label>Текущий пароль</label>
+      <input type="password" name="old_password" required>
+    </div>
+    <div class="form-group">
+      <label>Новый пароль</label>
+      <input type="password" name="new_password" required>
+    </div>
+    <div class="form-group">
+      <label>Повторите новый пароль</label>
+      <input type="password" name="new_password2" required>
+    </div>
+    <button type="submit" class="btn btn-ghost btn-sm">Изменить пароль</button>
+  </form>
+</div>
+
+</div><!-- /left -->
+
+<!-- Right column: Users (admin only) -->
+{% if current_user.role == 'admin' %}
+<div class="card">
+  <div class="card-header" style="margin-bottom:16px">
+    <span class="card-title">Пользователи</span>
+  </div>
+
+  <div class="table-wrap" style="margin-bottom:20px">
+    <table>
+      <thead>
+        <tr>
+          <th>Логин</th>
+          <th>Роль</th>
+          <th>Дата создания</th>
+          <th style="width:50px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:28px;height:28px;border-radius:50%;background:var(--accent-dim);
+                border:1px solid rgba(232,196,74,0.3);display:flex;align-items:center;justify-content:center;
+                font-family:var(--mono);font-size:0.7rem;color:var(--accent);font-weight:700">
+                {{ u.username[0].upper() }}
+              </div>
+              <span style="font-weight:{% if u.id == current_user.id %}600{% else %}400{% endif %}">
+                {{ u.username }}
+                {% if u.id == current_user.id %}<span style="font-size:0.65rem;color:var(--text-muted);font-family:var(--mono)"> (вы)</span>{% endif %}
+              </span>
+            </div>
+          </td>
+          <td>
+            <span class="badge {% if u.role == 'admin' %}badge-in{% else %}badge-neutral{% endif %}">
+              {{ 'ADMIN' if u.role == 'admin' else 'USER' }}
+            </span>
+          </td>
+          <td class="td-mono text-muted" style="font-size:0.75rem">{{ u.created_at[:10].replace('-','.') }}</td>
+          <td>
+            {% if u.id != current_user.id %}
+            <form method="post" onsubmit="return confirm('Удалить пользователя {{ u.username }}?')">
+              <input type="hidden" name="action" value="delete_user">
+              <input type="hidden" name="user_id" value="{{ u.id }}">
+              <button type="submit" class="btn btn-danger btn-xs">✕</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Add user form -->
+  <div style="border-top:1px solid var(--border);padding-top:18px">
+    <div class="card-title" style="margin-bottom:14px">Добавить пользователя</div>
+    <form method="post">
+      <input type="hidden" name="action" value="add_user">
+      <div class="grid-2" style="margin-bottom:12px">
+        <div class="form-group mb-0">
+          <label>Логин</label>
+          <input type="text" name="username" required placeholder="username">
+        </div>
+        <div class="form-group mb-0">
+          <label>Пароль</label>
+          <input type="password" name="password" required placeholder="••••••••">
+        </div>
+      </div>
+      <div class="form-group" style="max-width:200px">
+        <label>Роль</label>
+        <select name="role">
+          <option value="user">Пользователь</option>
+          <option value="admin">Администратор</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">+ Добавить</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+</div><!-- /grid -->
+
+<script>
+// Highlight selected theme card on click
+document.querySelectorAll('.theme-radio').forEach(radio => {
+  radio.addEventListener('change', () => {
+    document.querySelectorAll('.theme-card').forEach(c => {
+      c.style.borderColor = 'var(--border)';
+      c.style.background  = 'transparent';
+    });
+    const card = radio.nextElementSibling;
+    card.style.borderColor = 'var(--accent)';
+    card.style.background  = 'var(--accent-dim)';
+  });
+});
+</script>
+{% endblock %}
