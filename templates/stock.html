@@ -70,8 +70,6 @@
         <tr>
           <th>Товар</th>
           <th>Категория</th>
-          <th style="text-align:right">Поступило</th>
-          <th style="text-align:right">Изъято</th>
           <th style="text-align:right;background:var(--surface2);border-left:2px solid var(--border2);border-right:2px solid var(--border2)">Остаток</th>
           <th style="text-align:right">Посл. цена</th>
           <th style="text-align:right">Стоимость остатка</th>
@@ -94,12 +92,6 @@
             {% if p.cat_name %}
             <a href="{{ url_for('stats_detail') }}?category_id={{ p.category_id }}" style="color:var(--text-muted);text-decoration:none" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-muted)'">{{ p.cat_name }}</a>
             {% else %}—{% endif %}
-          </td>
-          <td style="text-align:right" class="td-mono text-green">
-            {% if p.total_in > 0 %}+{{ "%.3g" | format(p.total_in) }}{% if p.unit_short %} {{ p.unit_short }}{% endif %}{% else %}—{% endif %}
-          </td>
-          <td style="text-align:right" class="td-mono text-red">
-            {% if p.total_out > 0 %}−{{ "%.3g" | format(p.total_out) }}{% if p.unit_short %} {{ p.unit_short }}{% endif %}{% else %}—{% endif %}
           </td>
           <td style="text-align:right;background:var(--surface2);border-left:2px solid var(--border2);border-right:2px solid var(--border2);padding-top:14px;padding-bottom:14px">
             <span class="td-mono" style="
@@ -128,7 +120,7 @@
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="6" class="text-muted" style="font-family:var(--mono);font-size:0.65rem;letter-spacing:1px">ИТОГО (стоимость видимых позиций)</td>
+          <td colspan="4" class="text-muted" style="font-family:var(--mono);font-size:0.65rem;letter-spacing:1px">ИТОГО (стоимость видимых позиций)</td>
           <td style="text-align:right;font-family:var(--mono);color:var(--accent);font-weight:700">
             {% set vis_total = namespace(v=0) %}
             {% for p in products %}{% if p.current_stock > 0 and p.last_price %}{% set vis_total.v = vis_total.v + p.current_stock * p.last_price %}{% endif %}{% endfor %}

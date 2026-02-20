@@ -3,12 +3,12 @@
 {% block breadcrumb %}<span class="sep">Операции</span><span class="sep">/</span><strong>Статистика</strong>{% endblock %}
 
 {% block content %}
-<!-- Period selector -->
+<!-- Period + subject selector -->
 <div class="card mb-20">
   <div class="card-title" style="margin-bottom:14px">Период анализа</div>
   <div class="flex gap-16 items-center" style="flex-wrap:wrap;gap:16px;">
     <div class="preset-pills">
-      {% for p, label in [('today','Сегодня'),('week','7 дней'),('month','30 дней'),('year','Год')] %}
+      {% for p, label in [('today','Сегодня'),('week','7 дней'),('month','Текущий месяц'),('year','Год')] %}
       <a href="{{ url_for('stats') }}?preset={{ p }}"
         class="pill {% if filters.preset == p %}active{% endif %}">{{ label }}</a>
       {% endfor %}
@@ -27,6 +27,31 @@
       <a href="{{ url_for('stats') }}" class="btn btn-ghost btn-sm" style="margin-top:18px">Сбросить</a>
       {% endif %}
     </form>
+  </div>
+
+  <!-- Product / Category quick jump -->
+  <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+    <div class="form-group mb-0">
+      <label>Перейти к товару</label>
+      <select style="min-width:200px"
+        onchange="if(this.value){ window.location='{{ url_for('stats_detail') }}?product_id='+this.value+'{% if filters.preset %}&preset={{ filters.preset }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}' }">
+        <option value="">— выбрать товар —</option>
+        {% for p in all_products %}
+        <option value="{{ p.id }}">{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="color:var(--text-muted);font-family:var(--mono);font-size:0.72rem;padding-bottom:8px">или</div>
+    <div class="form-group mb-0">
+      <label>Перейти к категории</label>
+      <select style="min-width:200px"
+        onchange="if(this.value){ window.location='{{ url_for('stats_detail') }}?category_id='+this.value+'{% if filters.preset %}&preset={{ filters.preset }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}' }">
+        <option value="">— выбрать категорию —</option>
+        {% for c in all_categories %}
+        <option value="{{ c.id }}">{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
   </div>
 </div>
 

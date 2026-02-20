@@ -481,6 +481,22 @@ def stats_detail():
     category_id = request.args.get("category_id", "")
     date_from = request.args.get("date_from", "")
     date_to = request.args.get("date_to", "")
+    preset = request.args.get("preset", "")
+
+    # Apply preset periods
+    now = datetime.utcnow()
+    if preset == "today":
+        date_from = now.strftime("%Y-%m-%d")
+        date_to = now.strftime("%Y-%m-%d")
+    elif preset == "week":
+        date_from = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+        date_to = now.strftime("%Y-%m-%d")
+    elif preset == "month":
+        date_from = now.strftime("%Y-%m-01")
+        date_to = now.strftime("%Y-%m-%d")
+    elif preset == "year":
+        date_from = (now - timedelta(days=365)).strftime("%Y-%m-%d")
+        date_to = now.strftime("%Y-%m-%d")
 
     # Determine subject
     subject = None
@@ -595,7 +611,7 @@ def stats_detail():
         all_products=all_products,
         all_categories=all_categories,
         filters={"product_id": product_id, "category_id": category_id,
-                 "date_from": date_from, "date_to": date_to},
+                 "date_from": date_from, "date_to": date_to, "preset": preset},
     )
 
 
@@ -671,7 +687,7 @@ def stats():
         date_from = (now - timedelta(days=7)).strftime("%Y-%m-%d")
         date_to = now.strftime("%Y-%m-%d")
     elif preset == "month":
-        date_from = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+        date_from = now.strftime("%Y-%m-01")
         date_to = now.strftime("%Y-%m-%d")
     elif preset == "year":
         date_from = (now - timedelta(days=365)).strftime("%Y-%m-%d")
@@ -708,12 +724,17 @@ def stats():
     total_in_sum = sum(r["in_total"] for r in rows)
     total_out_sum = sum(r["out_total"] for r in rows)
 
+    all_products   = db.execute("SELECT id, name FROM products ORDER BY name").fetchall()
+    all_categories = db.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
+
     return render_template("stats.html",
         rows=rows,
         total_in_qty=total_in_qty,
         total_out_qty=total_out_qty,
         total_in_sum=total_in_sum,
         total_out_sum=total_out_sum,
+        all_products=all_products,
+        all_categories=all_categories,
         filters={"date_from": date_from, "date_to": date_to, "preset": preset},
     )
 
