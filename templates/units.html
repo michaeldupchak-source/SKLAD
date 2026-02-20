@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Единицы измерения{% endblock %}
+{% block breadcrumb %}<span class="sep">Справочники</span><span class="sep">/</span><strong>Единицы измерения</strong>{% endblock %}
+
+{% block content %}
+<div x-data="{ showAdd: false, editId: null, editName: '', editShort: '' }">
+
+<div class="modal-overlay" x-show="showAdd" x-cloak @click.self="showAdd=false" @keydown.escape.window="showAdd=false">
+  <div class="modal">
+    <div class="modal-title">Новая единица измерения</div>
+    <form method="post" action="{{ url_for('create_unit') }}">
+      <div class="form-group">
+        <label>Полное название</label>
+        <input type="text" name="name" required autofocus placeholder="Килограмм">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>Сокращение</label>
+        <input type="text" name="short_name" required placeholder="кг" style="max-width:120px">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" @click="showAdd=false">Отмена</button>
+        <button type="submit" class="btn btn-primary">Создать</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" x-show="editId !== null" x-cloak @click.self="editId=null" @keydown.escape.window="editId=null">
+  <div class="modal">
+    <div class="modal-title">Редактировать единицу</div>
+    <form method="post" :action="'/units/'+editId+'/update'">
+      <div class="form-group">
+        <label>Полное название</label>
+        <input type="text" name="name" x-model="editName" required>
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>Сокращение</label>
+        <input type="text" name="short_name" x-model="editShort" required style="max-width:120px">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" @click="editId=null">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Единицы измерения ({{ units | length }})</span>
+    <button class="btn btn-primary btn-sm" @click="showAdd=true">+ Добавить</button>
+  </div>
+  {% if units %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:50px">#</th>
+          <th>Название</th>
+          <th>Сокращение</th>
+          <th style="width:140px;text-align:right">Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for unit in units %}
+        <tr>
+          <td class="td-mono text-muted">{{ unit.id }}</td>
+          <td><strong>{{ unit.name }}</strong></td>
+          <td>
+            <span class="badge badge-neutral text-accent" style="color:var(--accent)">{{ unit.short_name }}</span>
+          </td>
+          <td style="text-align:right">
+            <div class="flex gap-8 justify-end">
+              <button class="btn btn-ghost btn-sm"
+                @click="editId={{ unit.id }}; editName='{{ unit.name | e }}'; editShort='{{ unit.short_name | e }}'">
+                Изменить
+              </button>
+              <form method="post" action="{{ url_for('delete_unit', id=unit.id) }}" style="margin:0"
+                onsubmit="return confirm('Удалить «{{ unit.name }}»?')">
+                <button type="submit" class="btn btn-danger btn-sm">✕</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon">⊟</div>
+    <p>Единиц измерения пока нет</p>
+    <button class="btn btn-primary btn-sm" @click="showAdd=true">Добавить первую</button>
+  </div>
+  {% endif %}
+</div>
+</div>
+{% endblock %}

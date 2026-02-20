@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Наличие на складе{% endblock %}
+{% block breadcrumb %}<strong>Наличие на складе</strong>{% endblock %}
+
+{% block content %}
+<!-- Summary cards -->
+<div class="stat-grid mb-20">
+  <div class="stat-card" style="border-color:var(--green);background:var(--green-dim)">
+    <div class="stat-label">В наличии (позиций)</div>
+    <div class="stat-value green">{{ in_stock_count }}</div>
+  </div>
+  <div class="stat-card" style="border-color:var(--red)">
+    <div class="stat-label">Отсутствует / исчерпано</div>
+    <div class="stat-value red">{{ out_of_stock_count }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Всего позиций</div>
+    <div class="stat-value">{{ total_items }}</div>
+  </div>
+  <div class="stat-card" style="border-color:var(--accent)">
+    <div class="stat-label">Стоимость склада (по посл. ценам)</div>
+    <div class="stat-value accent" style="font-size:1.4rem">{{ "%.2f" | format(total_stock_value) }} ₽</div>
+  </div>
+</div>
+
+<!-- Filters -->
+<form method="get" action="{{ url_for('stock') }}">
+<div class="filters-bar mb-20">
+  <div class="form-group mb-0">
+    <label>Поиск</label>
+    <input type="text" name="search" value="{{ filters.search }}" placeholder="Название товара…" style="min-width:200px">
+  </div>
+  <div class="form-group mb-0">
+    <label>Категория</label>
+    <select name="category_id">
+      <option value="">Все категории</option>
+      {% for cat in categories %}
+      <option value="{{ cat.id }}" {% if filters.category_id == cat.id|string %}selected{% endif %}>{{ cat.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group mb-0">
+    <label>Наличие</label>
+    <select name="show">
+      <option value="all" {% if filters.show=='all' %}selected{% endif %}>Все</option>
+      <option value="in_stock" {% if filters.show=='in_stock' %}selected{% endif %}>✓ Есть в наличии</option>
+      <option value="out_of_stock" {% if filters.show=='out_of_stock' %}selected{% endif %}>✕ Отсутствует</option>
+    </select>
+  </div>
+  <div class="flex gap-8 items-center" style="margin-top:18px">
+    <button type="submit" class="btn btn-primary btn-sm">Применить</button>
+    <a href="{{ url_for('stock') }}" class="btn btn-ghost btn-sm">Сбросить</a>
+  </div>
+  <div style="margin-left:auto;margin-top:18px">
+    <a href="{{ url_for('new_operation') }}" class="btn btn-primary btn-sm">+ Новая операция</a>
+  </div>
+</div>
+</form>
+
+<!-- Table -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Остатки товаров ({{ products | length }})</span>
+  </div>
+
+  {% if products %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Товар</th>
+          <th>Категория</th>
+          <th style="text-align:right">Поступило</th>
+          <th style="text-align:right">Изъято</th>
+          <th style="text-align:right;background:var(--surface2);border-left:2px solid var(--border2);border-right:2px solid var(--border2)">Остаток</th>
+          <th style="text-align:right">Посл. цена</th>
+          <th style="text-align:right">Стоимость остатка</th>
+          <th style="text-align:right">Посл. операция</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in products %}
+        {% set stock_val = (p.current_stock * p.last_price) if (p.current_stock > 0 and p.last_price) else 0 %}
+        <tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:{% if p.current_stock > 0 %}var(--green){% elif p.current_stock < 0 %}var(--red){% else %}var(--text-muted){% endif %};box-shadow:{% if p.current_stock > 0 %}0 0 6px var(--green){% else %}none{% endif %}"></span>
+              <a href="{{ url_for('stats_detail') }}?product_id={{ p.id }}" style="color:var(--text);text-decoration:none;font-weight:600">
+                {{ p.name }}
+              </a>
+            </div>
+          </td>
+          <td class="text-muted text-sm">
+            {% if p.cat_name %}
+            <a href="{{ url_for('stats_detail') }}?category_id={{ p.category_id }}" style="color:var(--text-muted);text-decoration:none" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-muted)'">{{ p.cat_name }}</a>
+            {% else %}—{% endif %}
+          </td>
+          <td style="text-align:right" class="td-mono text-green">
+            {% if p.total_in > 0 %}+{{ "%.3g" | format(p.total_in) }}{% if p.unit_short %} {{ p.unit_short }}{% endif %}{% else %}—{% endif %}
+          </td>
+          <td style="text-align:right" class="td-mono text-red">
+            {% if p.total_out > 0 %}−{{ "%.3g" | format(p.total_out) }}{% if p.unit_short %} {{ p.unit_short }}{% endif %}{% else %}—{% endif %}
+          </td>
+          <td style="text-align:right;background:var(--surface2);border-left:2px solid var(--border2);border-right:2px solid var(--border2);padding-top:14px;padding-bottom:14px">
+            <span class="td-mono" style="
+              font-size:1rem;font-weight:700;letter-spacing:-0.5px;
+              color:{% if p.current_stock > 0 %}var(--green){% elif p.current_stock < 0 %}var(--red){% else %}var(--text-muted){% endif %}
+            ">
+              {{ "%.3g" | format(p.current_stock) }}{% if p.unit_short %} <span style="font-weight:400;font-size:0.75rem;opacity:0.8">{{ p.unit_short }}</span>{% endif %}
+            </span>
+          </td>
+          <td style="text-align:right" class="td-mono text-muted">
+            {% if p.last_price %}{{ "%.2f" | format(p.last_price) }} ₽{% else %}—{% endif %}
+          </td>
+          <td style="text-align:right" class="td-mono">
+            {% if stock_val > 0 %}
+            <span class="text-accent">{{ "%.2f" | format(stock_val) }} ₽</span>
+            {% else %}—{% endif %}
+          </td>
+          <td style="text-align:right" class="td-mono text-muted" style="font-size:0.75rem;white-space:nowrap">
+            {% if p.last_op_date %}
+            {{ p.last_op_date[:10].replace('-','.') }}
+            <span style="opacity:0.6">{{ p.last_op_date[11:16] }}</span>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="6" class="text-muted" style="font-family:var(--mono);font-size:0.65rem;letter-spacing:1px">ИТОГО (стоимость видимых позиций)</td>
+          <td style="text-align:right;font-family:var(--mono);color:var(--accent);font-weight:700">
+            {% set vis_total = namespace(v=0) %}
+            {% for p in products %}{% if p.current_stock > 0 and p.last_price %}{% set vis_total.v = vis_total.v + p.current_stock * p.last_price %}{% endif %}{% endfor %}
+            {{ "%.2f" | format(vis_total.v) }} ₽
+          </td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon">▣</div>
+    <p>Нет товаров, соответствующих фильтрам</p>
+    <a href="{{ url_for('stock') }}" class="btn btn-ghost btn-sm">Сбросить фильтры</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

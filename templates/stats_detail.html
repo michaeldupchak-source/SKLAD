@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% block title %}
+  {% if subject_type == 'product' %}{{ subject.name }}{% else %}Категория: {{ subject.name }}{% endif %} — Статистика
+{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('stats') }}" style="color:var(--text-muted);text-decoration:none">Статистика</a>
+  <span class="sep"> / </span>
+  <strong>{% if subject_type == 'product' %}{{ subject.name }}{% else %}{{ subject.name }}{% endif %}</strong>
+{% endblock %}
+
+{% block content %}
+
+<!-- Subject switcher -->
+<div class="card mb-20">
+  <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
+    <div class="form-group mb-0">
+      <label>Товар</label>
+      <select onchange="if(this.value) window.location='/stats/detail?product_id='+this.value" style="min-width:200px">
+        <option value="">— выбрать товар —</option>
+        {% for p in all_products %}
+        <option value="{{ p.id }}" {% if subject_type=='product' and subject.id==p.id %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="color:var(--text-muted);font-family:var(--mono);font-size:0.72rem;padding-bottom:8px">или</div>
+    <div class="form-group mb-0">
+      <label>Категория</label>
+      <select onchange="if(this.value) window.location='/stats/detail?category_id='+this.value" style="min-width:200px">
+        <option value="">— выбрать категорию —</option>
+        {% for c in all_categories %}
+        <option value="{{ c.id }}" {% if subject_type=='category' and subject.id==c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <form method="get" action="{{ url_for('stats_detail') }}" class="flex gap-8 items-center" style="flex-wrap:wrap">
+      {% if filters.product_id %}<input type="hidden" name="product_id" value="{{ filters.product_id }}">{% endif %}
+      {% if filters.category_id %}<input type="hidden" name="category_id" value="{{ filters.category_id }}">{% endif %}
+      <div class="form-group mb-0">
+        <label>С даты</label>
+        <input type="date" name="date_from" value="{{ filters.date_from }}" style="min-width:0">
+      </div>
+      <div class="form-group mb-0">
+        <label>По дату</label>
+        <input type="date" name="date_to" value="{{ filters.date_to }}" style="min-width:0">
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm" style="margin-top:18px">Применить</button>
+      {% if filters.date_from or filters.date_to %}
+      <a href="{{ url_for('stats_detail') }}?{% if filters.product_id %}product_id={{ filters.product_id }}{% else %}category_id={{ filters.category_id }}{% endif %}"
+        class="btn btn-ghost btn-sm" style="margin-top:18px">Сбросить</a>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<!-- Subject header -->
+<div style="display:flex;align-items:center;gap:14px;margin-bottom:20px">
+  <div style="width:42px;height:42px;border-radius:8px;background:var(--accent-dim);border:1px solid rgba(232,196,74,0.3);display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0">
+    {% if subject_type == 'product' %}▣{% else %}⊞{% endif %}
+  </div>
+  <div>
+    <div style="font-size:1.1rem;font-weight:600">{{ subject.name }}</div>
+    <div style="font-size:0.78rem;color:var(--text-muted);font-family:var(--mono)">
+      {% if subject_type == 'product' %}
+        {% if subject.cat_name %}{{ subject.cat_name }}{% else %}без категории{% endif %}
+        {% if subject.unit_name %} · {{ subject.unit_name }} ({{ subject.unit_short }}){% endif %}
+        · остаток: <span class="{% if subject.current_stock > 0 %}text-green{% elif subject.current_stock < 0 %}text-red{% else %}text-muted{% endif %}">{{ "%.3g" | format(subject.current_stock) }}</span>
+      {% else %}
+        категория · {{ rows | length }} позиций
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Summary cards -->
+<div class="stat-grid mb-20">
+  <div class="stat-card" style="border-color:var(--green);background:var(--green-dim)">
+    <div class="stat-label">Поступило (ед.)</div>
+    <div class="stat-value green">{{ "%.3g" | format(total_in_qty) }}</div>
+  </div>
+  <div class="stat-card" style="border-color:var(--accent)">
+    <div class="stat-label">Сумма поступлений</div>
+    <div class="stat-value accent" style="font-size:1.5rem">{{ "%.2f" | format(total_in_sum) }} ₽</div>
+  </div>
+  <div class="stat-card" style="border-color:var(--red);background:var(--red-dim)">
+    <div class="stat-label">Изъято (ед.)</div>
+    <div class="stat-value red">{{ "%.3g" | format(total_out_qty) }}</div>
+  </div>
+  <div class="stat-card" style="border-color:var(--red)">
+    <div class="stat-label">Изъято на сумму</div>
+    <div class="stat-value red" style="font-size:1.5rem">{{ "%.2f" | format(total_out_sum) }} ₽</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Операций (посл. 50)</div>
+    <div class="stat-value">{{ ops | length }}</div>
+  </div>
+</div>
+
+<!-- Chart -->
+{% if chart_data %}
+<div class="card mb-20">
+  <div class="card-header">
+    <span class="card-title">Движение по месяцам (последние 12 мес.)</span>
+  </div>
+  <canvas id="mvChart" height="90"></canvas>
+</div>
+{% endif %}
+
+<!-- Breakdown by product (category mode) -->
+{% if subject_type == 'category' and rows | length > 1 %}
+<div class="card mb-20">
+  <div class="card-header">
+    <span class="card-title">Позиции категории</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Товар</th>
+          <th style="text-align:right">Поступило</th>
+          <th style="text-align:right">Сумма прихода</th>
+          <th style="text-align:right">Изъято</th>
+          <th style="text-align:right;background:var(--surface2);border-left:2px solid var(--border2);border-right:2px solid var(--border2)">Остаток</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>
+            <a href="{{ url_for('stats_detail') }}?product_id={{ row.id }}" style="color:var(--text);text-decoration:none;font-weight:600">
+              {{ row.product_name }}
+            </a>
+          </td>
+          <td style="text-align:right" class="td-mono text-green">
+            {% if row.in_qty > 0 %}+{{ "%.3g" | format(row.in_qty) }}{% if row.unit_short %} {{ row.unit_short }}{% endif %}{% else %}—{% endif %}
+          </td>
+          <td style="text-align:right" class="td-mono text-accent">
+            {% if row.in_total > 0 %}{{ "%.2f" | format(row.in_total) }} ₽{% else %}—{% endif %}
+          </td>
+          <td style="text-align:right" class="td-mono text-red">
+            {% if row.out_qty > 0 %}−{{ "%.3g" | format(row.out_qty) }}{% if row.unit_short %} {{ row.unit_short }}{% endif %}{% else %}—{% endif %}
+          </td>
+          <td style="text-align:right;background:var(--surface2);border-left:2px solid var(--border2);border-right:2px solid var(--border2)">
+            <span class="td-mono" style="font-weight:700;color:{% if row.current_stock > 0 %}var(--green){% elif row.current_stock < 0 %}var(--red){% else %}var(--text-muted){% endif %}">
+              {{ "%.3g" | format(row.current_stock) }}{% if row.unit_short %} <span style="font-weight:400;font-size:0.75rem">{{ row.unit_short }}</span>{% endif %}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Operations log -->
+<div class="card" x-data="{ detail: null }">
+  <div class="card-header">
+    <span class="card-title">История операций{% if ops | length == 50 %} (последние 50){% endif %}</span>
+  </div>
+  {% if ops %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:50px">#</th>
+          <th style="width:110px">Тип</th>
+          <th style="width:120px">Дата</th>
+          <th>Товары</th>
+          <th style="width:120px;text-align:right">Сумма</th>
+          <th>Комментарий</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in ops %}
+        {% set op = row['op'] %}
+        {% set items = row['items'] %}
+        {% set total_sum = namespace(v=0) %}
+        {% for item in items %}{% if item.price_per_unit %}{% set total_sum.v = total_sum.v + item.quantity * item.price_per_unit %}{% endif %}{% endfor %}
+        <tr style="cursor:pointer" @click="detail='op_{{ op.id }}'">
+          <td class="td-mono text-muted">{{ op.id }}</td>
+          <td>
+            {% if op.type == 'IN' %}<span class="badge badge-in">▲ ПРИХОД</span>
+            {% else %}<span class="badge badge-out">▼ РАСХОД</span>{% endif %}
+          </td>
+          <td class="td-mono text-muted" style="font-size:0.75rem">
+            {{ op.created_at[:10].replace('-','.') }}<br>
+            <span style="opacity:0.6">{{ op.created_at[11:16] }}</span>
+          </td>
+          <td>
+            {% for item in items %}
+            <span style="display:inline-block;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 7px;font-size:0.72rem;margin:1px;font-family:var(--mono)">
+              {{ item.product_name }} ×{{ "%.3g" | format(item.quantity) }}{% if item.unit_short %} {{ item.unit_short }}{% endif %}
+            </span>
+            {% endfor %}
+          </td>
+          <td style="text-align:right" class="td-mono">
+            {% if total_sum.v > 0 %}<span class="text-accent">{{ "%.2f" | format(total_sum.v) }} ₽</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="text-muted text-sm">{{ op.comment or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Detail modals -->
+  {% for row in ops %}
+  {% set op = row['op'] %}
+  {% set items = row['items'] %}
+  {% set total_sum = namespace(v=0) %}
+  {% for item in items %}{% if item.price_per_unit %}{% set total_sum.v = total_sum.v + item.quantity * item.price_per_unit %}{% endif %}{% endfor %}
+  <div class="modal-overlay" x-show="detail==='op_{{ op.id }}'" x-cloak @click.self="detail=null" @keydown.escape.window="detail=null" style="display:none">
+    <div class="modal" style="max-width:560px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px">
+        <div>
+          <div style="font-family:var(--mono);font-size:0.65rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px">ОПЕРАЦИЯ #{{ op.id }}</div>
+          {% if op.type == 'IN' %}<span class="badge badge-in" style="font-size:0.78rem;padding:4px 10px">▲ ПОПОЛНЕНИЕ</span>
+          {% else %}<span class="badge badge-out" style="font-size:0.78rem;padding:4px 10px">▼ ИЗЪЯТИЕ</span>{% endif %}
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" @click="detail=null">✕</button>
+      </div>
+      <div class="td-mono text-muted text-sm mb-16">{{ op.created_at[:10].replace('-','.') }} {{ op.created_at[11:16] }}</div>
+      {% if op.comment %}<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:0.85rem;color:var(--text-muted);margin-bottom:14px">{{ op.comment }}</div>{% endif %}
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr>
+          <th style="text-align:left;padding:7px 8px;font-size:0.62rem;font-family:var(--mono);color:var(--text-muted);border-bottom:1px solid var(--border)">ТОВАР</th>
+          <th style="text-align:right;padding:7px 8px;font-size:0.62rem;font-family:var(--mono);color:var(--text-muted);border-bottom:1px solid var(--border)">КОЛ-ВО</th>
+          <th style="text-align:right;padding:7px 8px;font-size:0.62rem;font-family:var(--mono);color:var(--text-muted);border-bottom:1px solid var(--border)">ЦЕНА/ЕД.</th>
+          <th style="text-align:right;padding:7px 8px;font-size:0.62rem;font-family:var(--mono);color:var(--text-muted);border-bottom:1px solid var(--border)">СУММА</th>
+        </tr></thead>
+        <tbody>
+          {% for item in items %}
+          <tr>
+            <td style="padding:9px 8px;font-size:0.875rem;border-bottom:1px solid var(--border)">{{ item.product_name }}</td>
+            <td style="padding:9px 8px;text-align:right;font-family:var(--mono);font-size:0.8rem;border-bottom:1px solid var(--border)">{{ "%.3g" | format(item.quantity) }}{% if item.unit_short %} {{ item.unit_short }}{% endif %}</td>
+            <td style="padding:9px 8px;text-align:right;font-family:var(--mono);font-size:0.8rem;border-bottom:1px solid var(--border);color:var(--text-muted)">{% if item.price_per_unit %}{{ "%.2f" | format(item.price_per_unit) }} ₽{% else %}—{% endif %}</td>
+            <td style="padding:9px 8px;text-align:right;font-family:var(--mono);font-size:0.8rem;border-bottom:1px solid var(--border);color:var(--accent)">{% if item.price_per_unit %}{{ "%.2f" | format(item.quantity * item.price_per_unit) }} ₽{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if total_sum.v > 0 %}
+      <div style="display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+        <span class="text-muted" style="font-family:var(--mono);font-size:0.65rem;letter-spacing:1px">ИТОГО</span>
+        <span style="font-family:var(--mono);font-size:1.3rem;color:var(--accent);font-weight:700">{{ "%.2f" | format(total_sum.v) }} ₽</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon">≡</div>
+    <p>Операций не найдено за выбранный период</p>
+  </div>
+  {% endif %}
+</div>
+
+{% if chart_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script>
+const raw = {{ chart_data | tojson }};
+const labels = raw.map(r => r.month);
+const inData  = raw.map(r => r.in_qty);
+const outData = raw.map(r => r.out_qty);
+
+new Chart(document.getElementById('mvChart'), {
+  type: 'bar',
+  data: {
+    labels,
+    datasets: [
+      { label: 'Поступление', data: inData,  backgroundColor: 'rgba(62,207,142,0.5)', borderColor: 'rgba(62,207,142,0.9)', borderWidth: 1, borderRadius: 4 },
+      { label: 'Изъятие',     data: outData, backgroundColor: 'rgba(239,77,109,0.5)', borderColor: 'rgba(239,77,109,0.9)', borderWidth: 1, borderRadius: 4 }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { labels: { color: '#6b7492', font: { family: 'Space Mono', size: 11 } } }
+    },
+    scales: {
+      x: { ticks: { color: '#6b7492', font: { family: 'Space Mono', size: 10 } }, grid: { color: '#252a38' } },
+      y: { ticks: { color: '#6b7492', font: { family: 'Space Mono', size: 10 } }, grid: { color: '#252a38' } }
+    }
+  }
+});
+</script>
+{% endif %}
+{% endblock %}

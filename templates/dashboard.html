@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Дашборд{% endblock %}
+{% block breadcrumb %}<strong>Дашборд</strong>{% endblock %}
+
+{% block content %}
+<div class="stat-grid">
+  <div class="stat-card" style="border-color:var(--accent)">
+    <div class="stat-label">Товаров на складе</div>
+    <div class="stat-value accent">{{ total_products }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Категорий</div>
+    <div class="stat-value">{{ total_categories }}</div>
+  </div>
+  <div class="stat-card" style="border-color:var(--green)">
+    <div class="stat-label">Операций сегодня</div>
+    <div class="stat-value green">{{ ops_today }}</div>
+  </div>
+  <div class="stat-card" style="background:var(--accent-dim);border-color:var(--accent)">
+    <div class="stat-label">Быстрый доступ</div>
+    <a href="{{ url_for('new_operation') }}" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:6px;">
+      + Новая операция
+    </a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Последние операции</span>
+    <a href="{{ url_for('history') }}" class="btn btn-ghost btn-sm">Вся история →</a>
+  </div>
+  {% if recent_ops %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Тип</th>
+          <th>Дата / Время</th>
+          <th>Товары</th>
+          <th>Сумма</th>
+          <th>Комментарий</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in recent_ops %}
+        {% set op = row['op'] %}
+        {% set items = row['items'] %}
+        <tr>
+          <td class="td-mono text-muted">{{ op.id }}</td>
+          <td>
+            {% if op.type == 'IN' %}
+              <span class="badge badge-in">▲ ПРИХОД</span>
+            {% else %}
+              <span class="badge badge-out">▼ РАСХОД</span>
+            {% endif %}
+          </td>
+          <td class="td-mono text-muted" style="font-size:0.75rem;white-space:nowrap;">
+            {{ op.created_at[:10].replace('-', '.') }}<br>
+            <span style="opacity:0.6;">{{ op.created_at[11:16] }}</span>
+          </td>
+          <td>
+            {% for item in items %}
+            <span style="display:inline-block;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 7px;font-size:0.72rem;margin:1px 1px 1px 0;font-family:var(--mono);">
+              {{ item.product_name }} ×{{ item.quantity | int if item.quantity == (item.quantity | int) else "%.2f" | format(item.quantity) }}{% if item.unit_short %} {{ item.unit_short }}{% endif %}
+            </span>
+            {% endfor %}
+          </td>
+          <td class="td-mono">
+            {% set total = namespace(v=0) %}
+            {% for item in items %}
+              {% if item.price_per_unit %}{% set total.v = total.v + item.quantity * item.price_per_unit %}{% endif %}
+            {% endfor %}
+            {% if total.v > 0 %}<span class="text-accent">{{ "%.2f" | format(total.v) }} ₽</span>{% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="text-muted text-sm">{{ op.comment or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon">⬡</div>
+    <p>Операций пока нет</p>
+    <a href="{{ url_for('new_operation') }}" class="btn btn-primary">Создать первую</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

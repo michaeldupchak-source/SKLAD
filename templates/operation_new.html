@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Новая операция{% endblock %}
+{% block breadcrumb %}<span class="sep">Операции</span><span class="sep">/</span><strong>Новая операция</strong>{% endblock %}
+
+{% block content %}
+<script>
+var STOCK_MAP = {{ stock_map | tojson }};
+</script>
+
+<div x-data="{
+  opType: 'IN',
+  rows: [{ pid: '', qty: '', price: '' }],
+  stock: STOCK_MAP,
+  addRow() { this.rows.push({ pid: '', qty: '', price: '' }) },
+  removeRow(i) { if(this.rows.length > 1) this.rows.splice(i, 1) },
+  rowTotal(r) {
+    return (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0);
+  },
+  get grandTotal() {
+    return this.rows.reduce((s,r) => s + this.rowTotal(r), 0);
+  },
+  rowStock(r) {
+    return r.pid ? (this.stock[r.pid] ?? null) : null;
+  },
+  rowOverflow(r) {
+    if (this.opType !== 'OUT' || !r.pid || !r.qty) return false;
+    let s = this.rowStock(r);
+    return s !== null && (parseFloat(r.qty) || 0) > s;
+  },
+  get overflowWarnings() {
+    return this.rows.filter(r => this.rowOverflow(r));
+  }
+}" style="max-width:900px">
+
+<form method="post" action="{{ url_for('create_operation') }}">
+
+<!-- Type selector -->
+<div class="flex gap-16 mb-20">
+  <label style="cursor:pointer;flex:1">
+    <input type="radio" name="type" value="IN" x-model="opType" style="display:none">
+    <div class="card" style="cursor:pointer;transition:all 0.15s"
+      :style="opType==='IN' ? 'border-color:var(--green);background:var(--green-dim)' : ''">
+      <div style="font-size:1.6rem;line-height:1;margin-bottom:8px;color:var(--green)">▲</div>
+      <div style="font-family:var(--mono);font-size:0.72rem;letter-spacing:1.5px"
+        :style="opType==='IN' ? 'color:var(--green)' : 'color:var(--text-muted)'">ПОПОЛНЕНИЕ</div>
+      <div class="text-muted text-sm" style="margin-top:4px">Товар приходит на склад</div>
+    </div>
+  </label>
+  <label style="cursor:pointer;flex:1">
+    <input type="radio" name="type" value="OUT" x-model="opType" style="display:none">
+    <div class="card" style="cursor:pointer;transition:all 0.15s"
+      :style="opType==='OUT' ? 'border-color:var(--red);background:var(--red-dim)' : ''">
+      <div style="font-size:1.6rem;line-height:1;margin-bottom:8px;color:var(--red)">▼</div>
+      <div style="font-family:var(--mono);font-size:0.72rem;letter-spacing:1.5px"
+        :style="opType==='OUT' ? 'color:var(--red)' : 'color:var(--text-muted)'">ИЗЪЯТИЕ</div>
+      <div class="text-muted text-sm" style="margin-top:4px">Товар уходит со склада</div>
+    </div>
+  </label>
+</div>
+
+<!-- Meta -->
+<div class="card mb-20">
+  <div class="card-title" style="margin-bottom:14px">Детали операции</div>
+  <div class="grid-2">
+    <div class="form-group mb-0">
+      <label>Дата и время</label>
+      <input type="datetime-local" name="created_at" id="dt" style="font-family:var(--mono)">
+    </div>
+    <div class="form-group mb-0">
+      <label>Комментарий</label>
+      <input type="text" name="comment" placeholder="Необязательно">
+    </div>
+  </div>
+</div>
+
+<!-- Items table -->
+<div class="card">
+  <div class="card-header" style="margin-bottom:14px">
+    <span class="card-title">Товары операции</span>
+    <button type="button" class="btn btn-ghost btn-sm" @click="addRow()">+ Добавить строку</button>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Товар</th>
+          <th style="width:100px" x-show="opType==='OUT'">На складе</th>
+          <th style="width:150px">Количество</th>
+          <th style="width:160px" x-show="opType==='IN'">Цена за ед. (₽)</th>
+          <th style="width:130px;text-align:right" x-show="opType==='IN'">Сумма</th>
+          <th style="width:160px;text-align:center" x-show="opType==='OUT'">Стоимость (FIFO)</th>
+          <th style="width:44px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="(row, i) in rows" :key="i">
+          <tr>
+            <td>
+              <select name="product_id[]" x-model="row.pid" required style="width:100%"
+                :style="rowOverflow(row) ? 'border-color:var(--red)' : ''">
+                <option value="">— выберите товар —</option>
+                {% for p in products %}
+                <option value="{{ p.id }}">{{ p.name }}{% if p.unit_short %} ({{ p.unit_short }}){% endif %}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <!-- Stock badge column -->
+            <td x-show="opType==='OUT'">
+              <template x-if="row.pid">
+                <span style="font-family:var(--mono);font-size:0.8rem;font-weight:700;padding:3px 9px;border-radius:5px;white-space:nowrap"
+                  :style="rowStock(row) > 0
+                    ? 'background:var(--green-dim);color:var(--green);border:1px solid rgba(62,207,142,0.25)'
+                    : 'background:var(--red-dim);color:var(--red);border:1px solid rgba(239,77,109,0.25)'"
+                  x-text="rowStock(row)">
+                </span>
+              </template>
+              <template x-if="!row.pid">
+                <span class="text-muted" style="font-family:var(--mono);font-size:0.8rem">—</span>
+              </template>
+            </td>
+            <td>
+              <input type="number" name="quantity[]" x-model="row.qty"
+                min="0.001" step="any" required placeholder="0" style="font-family:var(--mono)"
+                :style="rowOverflow(row) ? 'border-color:var(--red)' : ''">
+              <!-- Inline stock warning -->
+              <div x-show="rowOverflow(row)" style="margin-top:4px;font-size:0.72rem;color:var(--red);font-family:var(--mono);display:flex;align-items:center;gap:4px">
+                <span>⚠</span>
+                <span>превышает остаток</span>
+              </div>
+            </td>
+            <td x-show="opType==='IN'">
+              <input type="number" name="price_per_unit[]" x-model="row.price"
+                min="0" step="any" placeholder="0.00" style="font-family:var(--mono)">
+            </td>
+            <td x-show="opType==='IN'" style="text-align:right" class="td-mono text-accent">
+              <span x-text="rowTotal(row).toFixed(2) + ' ₽'"></span>
+            </td>
+            <td x-show="opType==='OUT'" style="text-align:center">
+              <span style="font-size:0.72rem;color:var(--text-muted);font-family:var(--mono)">рассчитается по FIFO</span>
+            </td>
+            <td>
+              <button type="button" @click="removeRow(i)" class="btn btn-danger btn-sm"
+                style="padding:5px 9px;font-size:0.85rem"
+                :disabled="rows.length===1">✕</button>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Grand total -->
+  <template x-if="opType==='IN'">
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:16px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+      <span class="text-muted" style="font-family:var(--mono);font-size:0.68rem;letter-spacing:1.5px">ИТОГО ПО ОПЕРАЦИИ</span>
+      <span style="font-family:var(--mono);font-size:1.4rem;color:var(--accent);font-weight:700"
+        x-text="grandTotal.toFixed(2) + ' ₽'"></span>
+    </div>
+  </template>
+
+  <!-- Overflow warning banner -->
+  <div x-show="opType==='OUT' && overflowWarnings.length > 0" x-cloak
+    style="margin-top:16px;padding:14px 16px;background:rgba(239,77,109,0.08);border:1px solid rgba(239,77,109,0.35);border-radius:8px;display:flex;gap:12px;align-items:flex-start">
+    <span style="font-size:1.1rem;margin-top:1px;flex-shrink:0">⚠️</span>
+    <div>
+      <div style="font-family:var(--mono);font-size:0.72rem;color:var(--red);letter-spacing:1px;margin-bottom:6px">НЕДОСТАТОЧНО ТОВАРА НА СКЛАДЕ</div>
+      <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.6">
+        Количество изъятия превышает текущий остаток по следующим позициям.
+        Операция всё равно будет проведена, но остаток уйдёт в минус.
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
+    <a href="{{ url_for('history') }}" class="btn btn-ghost">Отмена</a>
+    <button type="submit" class="btn btn-primary" style="min-width:200px"
+      :style="opType==='OUT' && overflowWarnings.length > 0 ? 'background:var(--red);color:#fff' : ''">
+      <span x-text="opType==='IN' ? '▲ Оформить пополнение' : '▼ Оформить изъятие'"></span>
+    </button>
+  </div>
+</div>
+</form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const el = document.getElementById('dt');
+  if (el) {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    el.value = now.toISOString().slice(0,16);
+  }
+});
+</script>
+{% endblock %}

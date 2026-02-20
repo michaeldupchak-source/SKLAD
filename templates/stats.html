@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Статистика{% endblock %}
+{% block breadcrumb %}<span class="sep">Операции</span><span class="sep">/</span><strong>Статистика</strong>{% endblock %}
+
+{% block content %}
+<!-- Period selector -->
+<div class="card mb-20">
+  <div class="card-title" style="margin-bottom:14px">Период анализа</div>
+  <div class="flex gap-16 items-center" style="flex-wrap:wrap;gap:16px;">
+    <div class="preset-pills">
+      {% for p, label in [('today','Сегодня'),('week','7 дней'),('month','30 дней'),('year','Год')] %}
+      <a href="{{ url_for('stats') }}?preset={{ p }}"
+        class="pill {% if filters.preset == p %}active{% endif %}">{{ label }}</a>
+      {% endfor %}
+    </div>
+    <form method="get" action="{{ url_for('stats') }}" class="flex gap-8 items-center" style="flex-wrap:wrap">
+      <div class="form-group mb-0">
+        <label>С даты</label>
+        <input type="date" name="date_from" value="{{ filters.date_from }}" style="min-width:0">
+      </div>
+      <div class="form-group mb-0">
+        <label>По дату</label>
+        <input type="date" name="date_to" value="{{ filters.date_to }}" style="min-width:0">
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm" style="margin-top:18px">Применить</button>
+      {% if filters.date_from or filters.date_to or filters.preset %}
+      <a href="{{ url_for('stats') }}" class="btn btn-ghost btn-sm" style="margin-top:18px">Сбросить</a>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<!-- Summary -->
+<div class="stat-grid mb-20">
+  <div class="stat-card" style="border-color:var(--green);background:var(--green-dim)">
+    <div class="stat-label">Поступило (ед.)</div>
+    <div class="stat-value green">{{ "%.1f" | format(total_in_qty) }}</div>
+  </div>
+  <div class="stat-card" style="border-color:var(--accent)">
+    <div class="stat-label">Сумма поступлений</div>
+    <div class="stat-value accent" style="font-size:1.5rem">{{ "%.2f" | format(total_in_sum) }} ₽</div>
+  </div>
+  <div class="stat-card" style="border-color:var(--red);background:var(--red-dim)">
+    <div class="stat-label">Изъято (ед.)</div>
+    <div class="stat-value red">{{ "%.1f" | format(total_out_qty) }}</div>
+  </div>
+  <div class="stat-card" style="border-color:var(--red)">
+    <div class="stat-label">Изъято на сумму</div>
+    <div class="stat-value red" style="font-size:1.5rem">{{ "%.2f" | format(total_out_sum) }} ₽</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Позиций на складе</div>
+    <div class="stat-value">{{ rows | selectattr('current_stock', 'gt', 0) | list | length }}</div>
+  </div>
+</div>
+
+<!-- Detail table -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Разбивка по товарам</span>
+  </div>
+  {% set active_rows = rows | selectattr('in_qty', 'gt', 0) | list + rows | selectattr('out_qty', 'gt', 0) | list %}
+  {% if rows %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Товар</th>
+          <th style="text-align:right">Поступило</th>
+          <th style="text-align:right">Сумма прихода</th>
+          <th style="text-align:right">Ср. цена</th>
+          <th style="text-align:right">Изъято</th>
+          <th style="text-align:right">Сумма изъятий</th>
+          <th style="text-align:right">Тек. остаток</th>
+          <th style="width:40px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set has_any = namespace(v=false) %}
+        {% for row in rows %}
+        {% if row.in_qty > 0 or row.out_qty > 0 or row.current_stock != 0 %}
+        {% set has_any.v = true %}
+        <tr>
+          <td><strong>{{ row.product_name }}</strong></td>
+          <td style="text-align:right" class="td-mono text-green">
+            {% if row.in_qty > 0 %}
+            +{{ "%.3g" | format(row.in_qty) }}{% if row.unit_short %} {{ row.unit_short }}{% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td style="text-align:right" class="td-mono">
+            {% if row.in_total > 0 %}
+            <span class="text-accent">{{ "%.2f" | format(row.in_total) }} ₽</span>
+            {% else %}—{% endif %}
+          </td>
+          <td style="text-align:right" class="td-mono text-muted">
+            {% if row.in_qty > 0 and row.in_total > 0 %}
+            {{ "%.2f" | format(row.in_total / row.in_qty) }} ₽
+            {% else %}—{% endif %}
+          </td>
+          <td style="text-align:right" class="td-mono text-red">
+            {% if row.out_qty > 0 %}
+            −{{ "%.3g" | format(row.out_qty) }}{% if row.unit_short %} {{ row.unit_short }}{% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td style="text-align:right" class="td-mono">
+            {% if row.out_total > 0 %}
+            <span class="text-red">{{ "%.2f" | format(row.out_total) }} ₽</span>
+            {% else %}—{% endif %}
+          </td>
+          <td style="text-align:right" class="td-mono">
+            <span class="{% if row.current_stock > 0 %}text-green{% elif row.current_stock < 0 %}text-red{% else %}text-muted{% endif %}">
+              {{ "%.3g" | format(row.current_stock) }}{% if row.unit_short %} {{ row.unit_short }}{% endif %}
+            </span>
+          </td>
+          <td style="text-align:right">
+            <a href="{{ url_for('stats_detail') }}?product_id={{ row.id }}"
+              title="Подробная статистика"
+              style="color:var(--text-muted);text-decoration:none;font-size:0.85rem;padding:3px 6px;border-radius:4px;border:1px solid var(--border);transition:all 0.12s"
+              onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+              onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">→</a>
+          </td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+        {% if not has_any.v %}
+        <tr><td colspan="6" class="text-muted text-sm" style="padding:20px;text-align:center">Нет движений за выбранный период</td></tr>
+        {% endif %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td class="text-muted" style="font-family:var(--mono);font-size:0.65rem;letter-spacing:1px">ИТОГО</td>
+          <td style="text-align:right;font-family:var(--mono);color:var(--green)">{{ "%.3g" | format(total_in_qty) }}</td>
+          <td style="text-align:right;font-family:var(--mono);color:var(--accent)">{{ "%.2f" | format(total_in_sum) }} ₽</td>
+          <td></td>
+          <td style="text-align:right;font-family:var(--mono);color:var(--red)">{{ "%.3g" | format(total_out_qty) }}</td>
+          <td style="text-align:right;font-family:var(--mono);color:var(--red)">{{ "%.2f" | format(total_out_sum) }} ₽</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon">◈</div>
+    <p>Нет данных</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
