@@ -13,6 +13,13 @@ var STOCK_MAP = {{ stock_map | tojson }};
   stock: STOCK_MAP,
   addRow() { this.rows.push({ pid: '', qty: '', price: '' }) },
   removeRow(i) { if(this.rows.length > 1) this.rows.splice(i, 1) },
+  tryAutoAdd(i) {
+    // Auto-add new row when last row has pid+qty filled (for OUT) or pid+qty+price filled (for IN)
+    if (i !== this.rows.length - 1) return;
+    const r = this.rows[i];
+    const filled = r.pid && r.qty && (this.opType === 'OUT' || r.price);
+    if (filled) this.addRow();
+  },
   rowTotal(r) {
     return (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0);
   },
@@ -97,8 +104,10 @@ var STOCK_MAP = {{ stock_map | tojson }};
         <template x-for="(row, i) in rows" :key="i">
           <tr>
             <td>
-              <select name="product_id[]" x-model="row.pid" required style="width:100%"
-                :style="rowOverflow(row) ? 'border-color:var(--red)' : ''">
+              <select name="product_id[]" x-model="row.pid" style="width:100%"
+                :required="rows.length === 1 || i < rows.length - 1"
+                :style="rowOverflow(row) ? 'border-color:var(--red)' : ''"
+                @change="tryAutoAdd(i)">
                 <option value="">— выберите товар —</option>
                 {% for p in products %}
                 <option value="{{ p.id }}">{{ p.name }}{% if p.unit_short %} ({{ p.unit_short }}){% endif %}</option>
@@ -121,8 +130,10 @@ var STOCK_MAP = {{ stock_map | tojson }};
             </td>
             <td>
               <input type="number" name="quantity[]" x-model="row.qty"
-                min="0.001" step="any" required placeholder="0" style="font-family:var(--mono)"
-                :style="rowOverflow(row) ? 'border-color:var(--red)' : ''">
+                min="0.001" step="any" placeholder="0" style="font-family:var(--mono)"
+                :required="rows.length === 1 || i < rows.length - 1"
+                :style="rowOverflow(row) ? 'border-color:var(--red)' : ''"
+                @change="tryAutoAdd(i)">
               <!-- Inline stock warning -->
               <div x-show="rowOverflow(row)" style="margin-top:4px;font-size:0.72rem;color:var(--red);font-family:var(--mono);display:flex;align-items:center;gap:4px">
                 <span>⚠</span>
@@ -131,7 +142,8 @@ var STOCK_MAP = {{ stock_map | tojson }};
             </td>
             <td x-show="opType==='IN'">
               <input type="number" name="price_per_unit[]" x-model="row.price"
-                min="0" step="any" placeholder="0.00" style="font-family:var(--mono)">
+                min="0" step="any" placeholder="0.00" style="font-family:var(--mono)"
+                @change="tryAutoAdd(i)">
             </td>
             <td x-show="opType==='IN'" style="text-align:right" class="td-mono text-accent">
               <span x-text="rowTotal(row).toFixed(2) + ' ₽'"></span>

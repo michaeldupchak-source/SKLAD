@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Вход — WMS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0d0f12;--surface:#141720;--border:#252a38;--text:#dde2f0;
+  --text-muted:#6b7492;--accent:#e8c44a;--accent-dim:rgba(232,196,74,0.1);
+  --red:#ef4d6d;--mono:'Space Mono',monospace;--sans:'DM Sans',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);
+  min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.box{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:40px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.4)}
+.logo{display:flex;align-items:center;gap:12px;margin-bottom:32px}
+.logo-icon{width:42px;height:42px;background:var(--accent);border-radius:8px;
+  display:flex;align-items:center;justify-content:center;font-size:1.2rem;color:#000;font-weight:700}
+.logo-text .wms{font-family:var(--mono);font-size:1rem;font-weight:700;letter-spacing:2px}
+.logo-text .sub{font-size:0.7rem;color:var(--text-muted)}
+h1{font-family:var(--mono);font-size:0.75rem;letter-spacing:2px;color:var(--text-muted);
+  text-transform:uppercase;margin-bottom:28px}
+.form-group{margin-bottom:16px}
+label{display:block;font-size:0.65rem;font-family:var(--mono);color:var(--text-muted);
+  letter-spacing:1px;text-transform:uppercase;margin-bottom:5px}
+input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  color:var(--text);padding:10px 13px;font-size:0.9rem;font-family:var(--sans);outline:none;transition:border-color 0.12s}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-dim)}
+.btn{width:100%;padding:11px;border-radius:6px;border:none;cursor:pointer;
+  background:var(--accent);color:#111;font-weight:700;font-size:0.9rem;font-family:var(--sans);
+  margin-top:8px;transition:filter 0.12s}
+.btn:hover{filter:brightness(1.1)}
+.error{background:rgba(239,77,109,0.1);border:1px solid rgba(239,77,109,0.35);
+  border-radius:6px;padding:10px 14px;font-size:0.82rem;color:var(--red);margin-bottom:16px}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="logo">
+    <div class="logo-icon">W</div>
+    <div class="logo-text">
+      <div class="wms">WMS</div>
+      <div class="sub">Складской учёт</div>
+    </div>
+  </div>
+  <h1>Вход в систему</h1>
+
+  {% with messages = get_flashed_messages() %}
+  {% if messages %}
+  <div class="error" style="background:rgba(62,207,142,0.1);border-color:rgba(62,207,142,0.35);color:#3ecf8e">
+    {{ messages[0] }}
+  </div>
+  {% endif %}
+  {% endwith %}
+
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% endif %}
+
+  <form method="post">
+    <div class="form-group">
+      <label>Логин</label>
+      <input type="text" name="username" required autofocus placeholder="admin">
+    </div>
+    <div class="form-group">
+      <label>Пароль</label>
+      <input type="password" name="password" required placeholder="••••••••">
+    </div>
+    <button type="submit" class="btn">Войти →</button>
+  </form>
+</div>
+</body>
+</html>

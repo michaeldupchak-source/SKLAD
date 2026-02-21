@@ -10,27 +10,15 @@
 
 {% block content %}
 
-<!-- Subject switcher -->
+<!-- Unified period + subject selector -->
 <div class="card mb-20">
-  <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
-    <div class="form-group mb-0">
-      <label>Товар</label>
-      <select onchange="if(this.value) window.location='/stats/detail?product_id='+this.value" style="min-width:200px">
-        <option value="">— выбрать товар —</option>
-        {% for p in all_products %}
-        <option value="{{ p.id }}" {% if subject_type=='product' and subject.id==p.id %}selected{% endif %}>{{ p.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div style="color:var(--text-muted);font-family:var(--mono);font-size:0.72rem;padding-bottom:8px">или</div>
-    <div class="form-group mb-0">
-      <label>Категория</label>
-      <select onchange="if(this.value) window.location='/stats/detail?category_id='+this.value" style="min-width:200px">
-        <option value="">— выбрать категорию —</option>
-        {% for c in all_categories %}
-        <option value="{{ c.id }}" {% if subject_type=='category' and subject.id==c.id %}selected{% endif %}>{{ c.name }}</option>
-        {% endfor %}
-      </select>
+  <div class="card-title" style="margin-bottom:14px">Период анализа</div>
+  <div class="flex gap-16 items-center" style="flex-wrap:wrap;gap:16px;">
+    <div class="preset-pills">
+      {% for p, label in [('today','Сегодня'),('week','7 дней'),('month','Текущий месяц'),('year','Год')] %}
+      <a href="{{ url_for('stats_detail') }}?{% if filters.product_id %}product_id={{ filters.product_id }}{% else %}category_id={{ filters.category_id }}{% endif %}&preset={{ p }}"
+        class="pill {% if filters.preset == p %}active{% endif %}">{{ label }}</a>
+      {% endfor %}
     </div>
     <form method="get" action="{{ url_for('stats_detail') }}" class="flex gap-8 items-center" style="flex-wrap:wrap">
       {% if filters.product_id %}<input type="hidden" name="product_id" value="{{ filters.product_id }}">{% endif %}
@@ -44,11 +32,39 @@
         <input type="date" name="date_to" value="{{ filters.date_to }}" style="min-width:0">
       </div>
       <button type="submit" class="btn btn-primary btn-sm" style="margin-top:18px">Применить</button>
-      {% if filters.date_from or filters.date_to %}
+      {% if filters.date_from or filters.date_to or filters.preset %}
       <a href="{{ url_for('stats_detail') }}?{% if filters.product_id %}product_id={{ filters.product_id }}{% else %}category_id={{ filters.category_id }}{% endif %}"
         class="btn btn-ghost btn-sm" style="margin-top:18px">Сбросить</a>
       {% endif %}
     </form>
+  </div>
+
+  <!-- Product / Category selector -->
+  <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+    <div class="form-group mb-0">
+      <label>Товар</label>
+      <select style="min-width:200px"
+        onchange="if(this.value){ window.location='{{ url_for('stats_detail') }}?product_id='+this.value+'{% if filters.preset %}&preset={{ filters.preset }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}' }">
+        <option value="">— выбрать товар —</option>
+        {% for p in all_products %}
+        <option value="{{ p.id }}" {% if subject_type=='product' and subject.id==p.id %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="color:var(--text-muted);font-family:var(--mono);font-size:0.72rem;padding-bottom:8px">или</div>
+    <div class="form-group mb-0">
+      <label>Категория</label>
+      <select style="min-width:200px"
+        onchange="if(this.value){ window.location='{{ url_for('stats_detail') }}?category_id='+this.value+'{% if filters.preset %}&preset={{ filters.preset }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}' }">
+        <option value="">— выбрать категорию —</option>
+        {% for c in all_categories %}
+        <option value="{{ c.id }}" {% if subject_type=='category' and subject.id==c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="padding-bottom:8px">
+      <a href="{{ url_for('stats') }}{% if filters.preset %}?preset={{ filters.preset }}{% elif filters.date_from %}?date_from={{ filters.date_from }}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}{% endif %}" class="btn btn-ghost btn-sm">← Все товары</a>
+    </div>
   </div>
 </div>
 
