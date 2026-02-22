@@ -559,7 +559,7 @@ textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
   collapsed: localStorage.getItem('sidebar') === 'collapsed'
 }" x-init="
   $watch('collapsed', v => localStorage.setItem('sidebar', v ? 'collapsed' : 'open'));
-  document.documentElement.setAttribute('data-theme', '{{ current_user.theme if current_user.is_authenticated else 'dark' }}');
+  document.documentElement.setAttribute('data-theme', '{% if current_user.is_authenticated and current_user.theme in ("dark", "light") %}{{ current_user.theme }}{% else %}dark{% endif %}');
 ">
 
 <aside class="sidebar" :class="{ collapsed: collapsed }">
@@ -625,7 +625,7 @@ textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
         <div style="width:28px;height:28px;border-radius:50%;background:var(--accent-dim);
           border:1px solid rgba(232,196,74,0.25);display:flex;align-items:center;justify-content:center;
           font-family:var(--mono);font-size:0.7rem;color:var(--accent);font-weight:700">
-          {{ current_user.username[0].upper() }}
+          {{ (current_user.username[0] if current_user.username else '?') | upper }}
         </div>
         <span style="font-size:0.8rem;color:var(--text-muted);font-family:var(--mono)">{{ current_user.username }}</span>
         {% if current_user.role == 'admin' %}
@@ -635,6 +635,7 @@ textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
         {% endif %}
       </div>
       <form method="post" action="{{ url_for('logout') }}" style="margin:0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-ghost btn-sm" title="Выйти"
           style="padding:5px 9px;font-size:0.8rem">⎋ Выйти</button>
       </form>

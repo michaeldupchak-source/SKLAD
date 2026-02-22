@@ -34,7 +34,7 @@
     <div class="form-group mb-0">
       <label>Перейти к товару</label>
       <select style="min-width:200px"
-        onchange="if(this.value){ window.location='{{ url_for('stats_detail') }}?product_id='+this.value+'{% if filters.preset %}&preset={{ filters.preset }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}' }">
+        onchange="if(this.value){ window.location='{{ url_for('stats_detail') }}?product_id='+encodeURIComponent(this.value)+'{% if filters.preset %}&preset={{ filters.preset | urlencode }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from | urlencode }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to | urlencode }}{% endif %}' }">
         <option value="">— выбрать товар —</option>
         {% for p in all_products %}
         <option value="{{ p.id }}">{{ p.name }}</option>
@@ -45,7 +45,7 @@
     <div class="form-group mb-0">
       <label>Перейти к категории</label>
       <select style="min-width:200px"
-        onchange="if(this.value){ window.location='{{ url_for('stats_detail') }}?category_id='+this.value+'{% if filters.preset %}&preset={{ filters.preset }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}' }">
+        onchange="if(this.value){ window.location='{{ url_for('stats_detail') }}?category_id='+encodeURIComponent(this.value)+'{% if filters.preset %}&preset={{ filters.preset | urlencode }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from | urlencode }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to | urlencode }}{% endif %}' }">
         <option value="">— выбрать категорию —</option>
         {% for c in all_categories %}
         <option value="{{ c.id }}">{{ c.name }}</option>

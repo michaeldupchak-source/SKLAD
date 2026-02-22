@@ -1,13 +1,30 @@
+import logging
+import os
+import re
+import secrets
 import sqlite3
+import urllib.parse
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
+from sqlite3 import IntegrityError
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Flask, render_template, request, redirect, url_for, g, flash
 from flask_login import (LoginManager, UserMixin,
                          login_user, logout_user, current_user)
+from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
 
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-here'  # Change in production
+# Read secret key from environment; fall back to a random key in development.
+_secret = os.environ.get('SECRET_KEY')
+if _secret:
+    app.secret_key = _secret
+else:
+    app.secret_key = secrets.token_hex(32)
+    logger.warning("SECRET_KEY not set – using a random key (sessions will not persist across restarts)")
+
+csrf = CSRFProtect(app)
 DB_PATH = "warehouse.db"
 
 login_manager = LoginManager(app)
@@ -23,10 +40,12 @@ class User(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
-    db = sqlite3.connect(DB_PATH)
-    db.row_factory = sqlite3.Row
-    row = db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-    db.close()
+    # Use a fresh connection here because load_user may be called outside a
+    # request context (e.g. during app startup). Using sqlite3 directly keeps
+    # the logic self-contained and avoids leaking a g.db to Flask-Login.
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
     return User(row) if row else None
 
 # ── DB helpers ─────────────────────────────────────────────
@@ -45,12 +64,12 @@ def close_db(e=None):
 
 def get_setting(key, default=None):
     try:
-        db = sqlite3.connect(DB_PATH)
-        db.row_factory = sqlite3.Row
-        row = db.execute("SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()
-        db.close()
+        with sqlite3.connect(DB_PATH) as db:
+            db.row_factory = sqlite3.Row
+            row = db.execute("SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()
         return row['value'] if row else default
-    except Exception:
+    except sqlite3.Error as e:
+        logger.exception("get_setting(%r) failed: %s", key, e)
         return default
 
 def set_setting(db, key, value):
@@ -119,6 +138,10 @@ def init_db():
         lot_id INTEGER NOT NULL REFERENCES lots(id),
         quantity REAL NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+    CREATE INDEX IF NOT EXISTS idx_operations_created_at ON operations(created_at);
+    CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
+    CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id);
     """)
     db.commit()
     db.close()
@@ -131,10 +154,14 @@ def local_dt_filter(value, fmt='%d.%m.%Y %H:%M'):
         return '—'
     tz_name = get_setting('timezone', 'UTC')
     try:
-        tz  = ZoneInfo(tz_name)
-        dt  = datetime.strptime(str(value)[:19], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+        tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        logger.error("Unknown timezone in settings: %r", tz_name)
+        tz = ZoneInfo('UTC')
+    try:
+        dt = datetime.strptime(str(value)[:19], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
         return dt.astimezone(tz).strftime(fmt)
-    except Exception:
+    except (ValueError, TypeError):
         return str(value)[:16]
 
 # ── Context processor ──────────────────────────────────────
@@ -147,6 +174,8 @@ PUBLIC = {'login', 'setup', 'static'}
 
 @app.before_request
 def check_auth():
+    if request.endpoint is None:
+        return
     if request.endpoint in PUBLIC:
         return
     db = get_db()
@@ -172,6 +201,16 @@ def setup():
             error = 'Введите логин и пароль'
         elif password != password2:
             error = 'Пароли не совпадают'
+        elif len(password) < 12:
+            error = 'Пароль должен содержать не менее 12 символов'
+        elif not re.search(r'[A-Z]', password):
+            error = 'Пароль должен содержать хотя бы одну заглавную букву'
+        elif not re.search(r'[a-z]', password):
+            error = 'Пароль должен содержать хотя бы одну строчную букву'
+        elif not re.search(r'\d', password):
+            error = 'Пароль должен содержать хотя бы одну цифру'
+        elif not re.search(r'[!@#$%^&*()_+\-=\[\]{};\'\":,.<>?/\\|`~]', password):
+            error = 'Пароль должен содержать хотя бы один специальный символ'
         else:
             now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
             db.execute(
@@ -199,7 +238,12 @@ def login():
         row = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
         if row and check_password_hash(row['password_hash'], password):
             login_user(User(row), remember=True)
-            return redirect(request.args.get('next') or url_for('stock'))
+            next_url = request.args.get('next', '')
+            parsed = urllib.parse.urlparse(next_url)
+            # Allow only relative same-origin paths
+            if next_url and not parsed.scheme and not parsed.netloc and next_url.startswith('/'):
+                return redirect(next_url)
+            return redirect(url_for('stock'))
         error = 'Неверный логин или пароль'
     return render_template('login.html', error=error)
 
@@ -266,19 +310,24 @@ def settings():
                     )
                     db.commit()
                     flash(f'Пользователь «{username}» добавлен')
-                except Exception:
+                except IntegrityError as e:
+                    logger.warning("add_user duplicate: %s", e)
                     flash('Пользователь с таким именем уже существует')
             else:
                 flash('Введите логин и пароль')
 
         elif action == 'delete_user' and current_user.role == 'admin':
-            uid = request.form.get('user_id', '')
-            if uid and int(uid) != current_user.id:
-                db.execute("DELETE FROM users WHERE id=?", (uid,))
-                db.commit()
-                flash('Пользователь удалён')
-            elif int(uid) == current_user.id:
-                flash('Нельзя удалить самого себя')
+            uid_raw = request.form.get('user_id', '')
+            if not uid_raw or not uid_raw.strip().lstrip('-').isdigit():
+                flash('Некорректный идентификатор пользователя')
+            else:
+                uid_int = int(uid_raw)
+                if uid_int == current_user.id:
+                    flash('Нельзя удалить самого себя')
+                else:
+                    db.execute("DELETE FROM users WHERE id=?", (uid_int,))
+                    db.commit()
+                    flash('Пользователь удалён')
 
         elif action == 'change_password':
             old = request.form.get('old_password', '')
@@ -312,7 +361,7 @@ def settings():
 
 
 # ── FIFO helpers ───────────────────────────────────────────
-def fifo_consume(db, product_id, qty, operation_item_id, created_at):
+def fifo_consume(db, product_id, qty, operation_item_id):
     lots = db.execute("""
         SELECT * FROM lots
         WHERE product_id=? AND remaining_qty > 0
@@ -526,7 +575,7 @@ def create_operation():
                     "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit) VALUES (?,?,?,NULL)",
                     (op_id, pid, qty))
                 item_id   = item_cur.lastrowid
-                fifo_price = fifo_consume(db, pid, qty, item_id, created_at)
+                fifo_price = fifo_consume(db, pid, qty, item_id)
                 if fifo_price is not None:
                     db.execute("UPDATE operation_items SET price_per_unit=? WHERE id=?",
                                (round(fifo_price, 6), item_id))
@@ -608,7 +657,7 @@ def update_operation(id):
                 "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit) VALUES (?,?,?,NULL)",
                 (id, int(pid), qty))
             item_id   = item_cur.lastrowid
-            fifo_price = fifo_consume(db, int(pid), qty, item_id, created_at)
+            fifo_price = fifo_consume(db, int(pid), qty, item_id)
             if fifo_price is not None:
                 db.execute("UPDATE operation_items SET price_per_unit=? WHERE id=?",
                            (round(fifo_price, 6), item_id))
@@ -657,13 +706,17 @@ def stats_detail():
 
     now = datetime.utcnow()
     if preset == "today":
-        date_from = now.strftime("%Y-%m-%d"); date_to = now.strftime("%Y-%m-%d")
+        date_from = now.strftime("%Y-%m-%d")
+        date_to = now.strftime("%Y-%m-%d")
     elif preset == "week":
-        date_from = (now - timedelta(days=7)).strftime("%Y-%m-%d"); date_to = now.strftime("%Y-%m-%d")
+        date_from = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+        date_to = now.strftime("%Y-%m-%d")
     elif preset == "month":
-        date_from = now.strftime("%Y-%m-01"); date_to = now.strftime("%Y-%m-%d")
+        date_from = now.strftime("%Y-%m-01")
+        date_to = now.strftime("%Y-%m-%d")
     elif preset == "year":
-        date_from = (now - timedelta(days=365)).strftime("%Y-%m-%d"); date_to = now.strftime("%Y-%m-%d")
+        date_from = (now - timedelta(days=365)).strftime("%Y-%m-%d")
+        date_to = now.strftime("%Y-%m-%d")
 
     subject = subject_type = None
     if product_id:
@@ -804,13 +857,17 @@ def stats():
 
     now = datetime.utcnow()
     if preset == "today":
-        date_from = now.strftime("%Y-%m-%d"); date_to = now.strftime("%Y-%m-%d")
+        date_from = now.strftime("%Y-%m-%d")
+        date_to = now.strftime("%Y-%m-%d")
     elif preset == "week":
-        date_from = (now - timedelta(days=7)).strftime("%Y-%m-%d"); date_to = now.strftime("%Y-%m-%d")
+        date_from = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+        date_to = now.strftime("%Y-%m-%d")
     elif preset == "month":
-        date_from = now.strftime("%Y-%m-01"); date_to = now.strftime("%Y-%m-%d")
+        date_from = now.strftime("%Y-%m-01")
+        date_to = now.strftime("%Y-%m-%d")
     elif preset == "year":
-        date_from = (now - timedelta(days=365)).strftime("%Y-%m-%d"); date_to = now.strftime("%Y-%m-%d")
+        date_from = (now - timedelta(days=365)).strftime("%Y-%m-%d")
+        date_to = now.strftime("%Y-%m-%d")
 
     op_conditions, op_params = [], []
     if date_from:
