@@ -1,2 +1,49 @@
-.idea
+# ── Python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# ── Virtual environments ──────────────────────────────────
+.venv/
+venv/
+env/
+.env
+
+# ── Environment / secrets ─────────────────────────────────
+.env.local
+.env.*.local
+*.env
+
+# ── Database (runtime data – never commit) ────────────────
 warehouse.db
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Flask / Werkzeug ──────────────────────────────────────
+instance/
+flask_session/
+
+# ── IDEs ──────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── macOS ─────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ── Logs ──────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Distribution / packaging ──────────────────────────────
+dist/
+build/
+*.egg-info/
