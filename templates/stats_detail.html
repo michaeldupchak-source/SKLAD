@@ -63,7 +63,7 @@
       </select>
     </div>
     <div style="padding-bottom:8px">
-      <a href="{{ url_for('stats') }}{% if filters.preset %}?preset={{ filters.preset }}{% elif filters.date_from %}?date_from={{ filters.date_from }}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}{% endif %}" class="btn btn-ghost btn-sm">← Все товары</a>
+      <a href="{{ url_for('stats') }}{% if filters.preset %}?preset={{ filters.preset }}{% elif filters.date_from or filters.date_to %}?{% if filters.date_from %}date_from={{ filters.date_from }}{% endif %}{% if filters.date_from and filters.date_to %}&{% endif %}{% if filters.date_to %}date_to={{ filters.date_to }}{% endif %}{% endif %}" class="btn btn-ghost btn-sm">← Все товары</a>
     </div>
   </div>
 </div>

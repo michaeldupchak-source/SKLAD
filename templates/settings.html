@@ -21,6 +21,7 @@
 <div class="card mb-20">
   <div class="card-title" style="margin-bottom:16px">Часовой пояс</div>
   <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="timezone">
     <div class="form-group mb-0">
       <label>Часовой пояс склада</label>
@@ -43,6 +44,7 @@
 <div class="card mb-20">
   <div class="card-title" style="margin-bottom:16px">Тема оформления</div>
   <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="theme">
     <div style="display:flex;gap:12px;margin-bottom:16px">
       <label style="cursor:pointer;flex:1">
@@ -92,6 +94,7 @@
 <div class="card">
   <div class="card-title" style="margin-bottom:16px">Смена пароля</div>
   <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="change_password">
     <div class="form-group">
       <label>Текущий пароль</label>
@@ -136,7 +139,7 @@
               <div style="width:28px;height:28px;border-radius:50%;background:var(--accent-dim);
                 border:1px solid rgba(232,196,74,0.3);display:flex;align-items:center;justify-content:center;
                 font-family:var(--mono);font-size:0.7rem;color:var(--accent);font-weight:700">
-                {{ u.username[0].upper() }}
+                {{ (u.username[0] if u.username else '?') | upper }}
               </div>
               <span style="font-weight:{% if u.id == current_user.id %}600{% else %}400{% endif %}">
                 {{ u.username }}
@@ -153,6 +156,7 @@
           <td>
             {% if u.id != current_user.id %}
             <form method="post" onsubmit="return confirm('Удалить пользователя {{ u.username }}?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="action" value="delete_user">
               <input type="hidden" name="user_id" value="{{ u.id }}">
               <button type="submit" class="btn btn-danger btn-xs">✕</button>
@@ -169,6 +173,7 @@
   <div style="border-top:1px solid var(--border);padding-top:18px">
     <div class="card-title" style="margin-bottom:14px">Добавить пользователя</div>
     <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="add_user">
       <div class="grid-2" style="margin-bottom:12px">
         <div class="form-group mb-0">
