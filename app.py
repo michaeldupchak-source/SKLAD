@@ -114,11 +114,8 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         type TEXT NOT NULL CHECK(type IN ('IN','OUT')),
         created_at TEXT NOT NULL,
-        comment TEXT,
-        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+        comment TEXT
     );
-    -- Migration: add user_id to existing installs (safe if column already exists)
-    CREATE INDEX IF NOT EXISTS idx_operations_user_id ON operations(user_id);
     CREATE TABLE IF NOT EXISTS operation_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         operation_id INTEGER NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
@@ -147,11 +144,6 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id);
     """)
     db.commit()
-    # Runtime migration: add user_id to operations for existing databases
-    existing = [r[1] for r in db.execute("PRAGMA table_info(operations)")]
-    if 'user_id' not in existing:
-        db.execute("ALTER TABLE operations ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
-        db.commit()
     db.close()
 
 
@@ -577,8 +569,8 @@ def create_operation():
         items.append((int(pid), qty, price))
 
     if items:
-        cur   = db.execute("INSERT INTO operations (type, created_at, comment, user_id) VALUES (?,?,?,?)",
-                           (op_type, created_at, comment, current_user.id))
+        cur   = db.execute("INSERT INTO operations (type, created_at, comment) VALUES (?,?,?)",
+                           (op_type, created_at, comment))
         op_id = cur.lastrowid
         for pid, qty, price in items:
             if op_type == "OUT":
@@ -824,7 +816,6 @@ def history():
     date_to    = request.args.get("date_to", "")
     op_type    = request.args.get("op_type", "")
     product_id = request.args.get("product_id", "")
-    user_id    = request.args.get("user_id", "")
     page       = int(request.args.get("page", 1))
     limit      = 20
     offset     = (page - 1) * limit
@@ -839,16 +830,11 @@ def history():
     if product_id:
         conditions.append("EXISTS (SELECT 1 FROM operation_items oi WHERE oi.operation_id=o.id AND oi.product_id=?)")
         params.append(int(product_id))
-    if user_id:
-        conditions.append("o.user_id = ?"); params.append(int(user_id))
 
     where  = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     total  = db.execute(f"SELECT COUNT(*) FROM operations o {where}", params).fetchone()[0]
     ops    = db.execute(
-        f"""SELECT o.*, u.username as op_username
-            FROM operations o
-            LEFT JOIN users u ON u.id = o.user_id
-            {where} ORDER BY o.created_at DESC LIMIT ? OFFSET ?""",
+        f"SELECT * FROM operations o {where} ORDER BY o.created_at DESC LIMIT ? OFFSET ?",
         params + [limit, offset]
     ).fetchall()
 
@@ -862,12 +848,11 @@ def history():
         ops_with_items.append({"op": op, "items": items})
 
     all_products = db.execute("SELECT id, name FROM products ORDER BY name").fetchall()
-    all_users    = db.execute("SELECT id, username FROM users ORDER BY username").fetchall()
     pages   = (total + limit - 1) // limit
     filters = {"date_from": date_from, "date_to": date_to,
-               "op_type": op_type, "product_id": product_id, "user_id": user_id}
+               "op_type": op_type, "product_id": product_id}
     return render_template("history.html", operations=ops_with_items, products=all_products,
-                           users=all_users, total=total, page=page, pages=pages, filters=filters)
+                           total=total, page=page, pages=pages, filters=filters)
 
 # ── Stats ──────────────────────────────────────────────────
 @app.route("/stats")
