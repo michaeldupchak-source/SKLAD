@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Наличие на складе — {{ now }}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Arial', sans-serif;
+    font-size: 11pt;
+    color: #111;
+    background: #fff;
+    padding: 20mm 15mm;
+  }
+
+  .print-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #111;
+  }
+  .print-title { font-size: 18pt; font-weight: 700; letter-spacing: -0.5px; }
+  .print-meta { text-align: right; font-size: 8.5pt; color: #555; line-height: 1.6; }
+  .print-meta strong { color: #111; }
+  .print-filters { font-size: 8pt; color: #666; margin-bottom: 14px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+  thead tr { background: #f0f0f0; border-top: 1px solid #ccc; border-bottom: 1px solid #ccc; }
+  th {
+    padding: 6px 8px;
+    text-align: left;
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #444;
+  }
+  td { padding: 5px 8px; border-bottom: 1px solid #e8e8e8; vertical-align: middle; }
+  td.num { text-align: right; font-family: 'Courier New', monospace; }
+  td.muted { color: #888; font-size: 9pt; }
+  tr:nth-child(even) { background: #fafafa; }
+
+  .stock-positive { color: #1a7a4a; font-weight: 700; }
+  .stock-zero     { color: #999; }
+  .stock-negative { color: #c0392b; font-weight: 700; }
+
+  tfoot td {
+    border-top: 2px solid #ccc;
+    font-weight: 700;
+    background: #f0f0f0;
+    font-size: 9.5pt;
+    padding: 7px 8px;
+  }
+
+  .print-footer {
+    margin-top: 16px;
+    font-size: 7.5pt;
+    color: #aaa;
+    text-align: right;
+    border-top: 1px solid #e0e0e0;
+    padding-top: 8px;
+  }
+
+  /* Screen-only top bar */
+  .screen-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    background: #1c2030;
+    color: #dde2f0;
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    z-index: 100;
+    border-bottom: 1px solid #333a50;
+  }
+  .screen-bar a { color: #6b7492; text-decoration: none; font-size: 12px; }
+  .screen-bar a:hover { color: #dde2f0; }
+  .btn-print {
+    margin-left: auto;
+    background: #e8c44a;
+    color: #0d0f12;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 18px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .btn-print:hover { background: #f0d060; }
+
+  body { padding-top: 52px; }
+
+  @media print {
+    .screen-bar { display: none; }
+    body { padding-top: 0; }
+    tr { page-break-inside: avoid; }
+    thead { display: table-header-group; }
+  }
+</style>
+</head>
+<body>
+
+<div class="screen-bar">
+  <a href="/stock">← Наличие</a>
+  <span style="color:#6b7492">|</span>
+  <span>Предпросмотр печати</span>
+  <button class="btn-print" onclick="window.print()">🖨 Печать</button>
+</div>
+
+<div class="print-header">
+  <div class="print-title">Наличие на складе</div>
+  <div class="print-meta">
+    <div>Дата: <strong>{{ now }}</strong></div>
+    <div>Позиций: <strong>{{ products | length }}</strong></div>
+    <div>В наличии: <strong>{{ products | selectattr('current_stock', 'gt', 0) | list | length }}</strong></div>
+  </div>
+</div>
+
+{% set active_filters = [] %}
+{% if filters.search %}{% set _ = active_filters.append('Поиск: «' ~ filters.search ~ '»') %}{% endif %}
+{% if filters.show == 'in_stock' %}{% set _ = active_filters.append('Только в наличии') %}{% endif %}
+{% if filters.show == 'out_of_stock' %}{% set _ = active_filters.append('Только отсутствующие') %}{% endif %}
+{% if active_filters %}
+<div class="print-filters">Фильтры: {{ active_filters | join(' · ') }}</div>
+{% endif %}
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:30px">#</th>
+      <th>Наименование</th>
+      <th>Категория</th>
+      <th style="text-align:right;width:80px">Ед. изм.</th>
+      <th style="text-align:right;width:100px">Остаток</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in products %}
+    <tr>
+      <td class="muted">{{ loop.index }}</td>
+      <td><strong>{{ p.name }}</strong></td>
+      <td class="muted">{{ p.cat_name or '—' }}</td>
+      <td class="num" style="font-size:9pt;color:#555">{{ p.unit_short or '—' }}</td>
+      <td class="num {% if p.current_stock > 0 %}stock-positive{% elif p.current_stock < 0 %}stock-negative{% else %}stock-zero{% endif %}">
+        {{ "%.3g" | format(p.current_stock) }}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td colspan="4">Итого позиций: {{ products | length }}</td>
+      <td class="num">{{ products | selectattr('current_stock', 'gt', 0) | list | length }} в наличии</td>
+    </tr>
+  </tfoot>
+</table>
+
+<div class="print-footer">SKLAD WMS · Сформировано {{ now }}</div>
+
+</body>
+</html>
