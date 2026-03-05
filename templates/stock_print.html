@@ -152,7 +152,7 @@
       <td class="num {% if p.current_stock > 0 %}stock-positive{% elif p.current_stock < 0 %}stock-negative{% else %}stock-zero{% endif %}">
         {{ "%.3g" | format(p.current_stock) }}
       </td>
-      <td style="border-bottom:1px solid #bbb"></td>
+      <td style="border-bottom:1px solid #e8e8e8"></td>
     </tr>
     {% endfor %}
   </tbody>
