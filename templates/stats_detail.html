@@ -278,9 +278,11 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script>
 const raw = {{ chart_data | tojson }};
-const labels = raw.map(r => r.month);
-const inData  = raw.map(r => r.in_qty);
-const outData = raw.map(r => r.out_qty);
+const labels   = raw.map(r => r.month);
+const inData   = raw.map(r => r.in_qty);
+const outData  = raw.map(r => r.out_qty);
+const inTotal  = raw.map(r => r.in_total  || 0);
+const outTotal = raw.map(r => r.out_total || 0);
 
 new Chart(document.getElementById('mvChart'), {
   type: 'bar',
@@ -294,7 +296,21 @@ new Chart(document.getElementById('mvChart'), {
   options: {
     responsive: true,
     plugins: {
-      legend: { labels: { color: '#6b7492', font: { family: 'Space Mono', size: 11 } } }
+      legend: { labels: { color: '#6b7492', font: { family: 'Space Mono', size: 11 } } },
+      tooltip: {
+        callbacks: {
+          label: function(ctx) {
+            const idx = ctx.dataIndex;
+            const isIn = ctx.datasetIndex === 0;
+            const qty   = ctx.parsed.y;
+            const total = isIn ? inTotal[idx] : outTotal[idx];
+            const label = isIn ? 'Поступление' : 'Изъятие';
+            const lines = [`${label}: ${qty} ед.`];
+            if (total > 0) lines.push(`Сумма: ${total.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2})} ₽`);
+            return lines;
+          }
+        }
+      }
     },
     scales: {
       x: { ticks: { color: '#6b7492', font: { family: 'Space Mono', size: 10 } }, grid: { color: '#252a38' } },

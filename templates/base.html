@@ -7,6 +7,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script>
+  // Fix #12: Apply theme immediately to prevent flash of dark theme on light mode
+  (function() {
+    // Fix #12: Apply theme before render to prevent flash
+    var theme = '{% if current_user.is_authenticated and current_user.theme == "light" %}light{% else %}dark{% endif %}';
+    document.documentElement.setAttribute('data-theme', theme);
+    // Fix sidebar flash: pre-apply collapsed class before Alpine loads
+    if (localStorage.getItem('sidebar') === 'collapsed') {
+      document.documentElement.classList.add('sidebar-pre-collapsed');
+    }
+  })();
+</script>
 <style>
 :root {
   --bg: #0d0f12;
@@ -370,7 +382,7 @@ label {
   text-transform: uppercase;
 }
 input[type=text], input[type=number], input[type=datetime-local],
-input[type=date], textarea, select {
+input[type=date], input[type=password], textarea, select {
   width: 100%;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -553,13 +565,21 @@ textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 [x-cloak] { display: none !important; }
+
+/* Fix sidebar pre-collapsed state to prevent flash */
+html.sidebar-pre-collapsed .sidebar { width: 56px !important; }
+html.sidebar-pre-collapsed .main { margin-left: 56px !important; }
+html.sidebar-pre-collapsed .sidebar { transition: none !important; }
+html.sidebar-pre-collapsed .main { transition: none !important; }
 </style>
 </head>
 <body x-data="{
   collapsed: localStorage.getItem('sidebar') === 'collapsed'
 }" x-init="
   $watch('collapsed', v => localStorage.setItem('sidebar', v ? 'collapsed' : 'open'));
+  document.documentElement.removeAttribute('data-theme');
   document.documentElement.setAttribute('data-theme', '{% if current_user.is_authenticated and current_user.theme in ("dark", "light") %}{{ current_user.theme }}{% else %}dark{% endif %}');
+  document.documentElement.classList.remove('sidebar-pre-collapsed');
 ">
 
 <aside class="sidebar" :class="{ collapsed: collapsed }">

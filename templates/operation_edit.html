@@ -130,7 +130,7 @@ var INITIAL_ROWS = [
             </td>
             <td>
               <input type="number" name="quantity[]" x-model="row.qty"
-                min="0.001" step="any" required placeholder="0" style="font-family:var(--mono)"
+                min="1" step="1" required placeholder="0" style="font-family:var(--mono)"
                 :style="rowOverflow(row) ? 'border-color:var(--red)' : ''">
               <div x-show="rowOverflow(row)" style="margin-top:4px;font-size:0.72rem;color:var(--red);font-family:var(--mono);display:flex;align-items:center;gap:4px">
                 <span>⚠</span><span>превышает остаток</span>
