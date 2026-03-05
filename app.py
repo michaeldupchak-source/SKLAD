@@ -109,7 +109,8 @@ def init_db():
         unit_id INTEGER REFERENCES units(id),
         description TEXT,
         current_stock REAL NOT NULL DEFAULT 0,
-        is_active INTEGER NOT NULL DEFAULT 1
+        is_active INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS operations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,6 +158,13 @@ def init_db():
     existing_p = [r[1] for r in db.execute("PRAGMA table_info(products)")]
     if 'is_active' not in existing_p:
         db.execute("ALTER TABLE products ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+        db.commit()
+    if 'sort_order' not in existing_p:
+        db.execute("ALTER TABLE products ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+        # seed sort_order from current alphabetical order
+        rows = db.execute("SELECT id FROM products ORDER BY name").fetchall()
+        for i, (pid,) in enumerate(rows):
+            db.execute("UPDATE products SET sort_order=? WHERE id=?", (i, pid))
         db.commit()
     db.close()
 
@@ -499,7 +507,7 @@ def products():
             LEFT JOIN categories c ON c.id = p.category_id
             LEFT JOIN units u ON u.id = p.unit_id
             WHERE p.category_id = ? AND (p.is_active = 1 OR ? = '1')
-            ORDER BY p.is_active DESC, p.name
+            ORDER BY p.is_active DESC, p.sort_order, p.name
         """, (cat_filter, show_archived)).fetchall()
     else:
         prods = db.execute("""
@@ -508,7 +516,7 @@ def products():
             LEFT JOIN categories c ON c.id = p.category_id
             LEFT JOIN units u ON u.id = p.unit_id
             WHERE p.is_active = 1 OR ? = '1'
-            ORDER BY p.is_active DESC, p.name
+            ORDER BY p.is_active DESC, p.sort_order, p.name
         """, (show_archived,)).fetchall()
     cats      = db.execute("SELECT * FROM categories ORDER BY name").fetchall()
     all_units = db.execute("SELECT * FROM units ORDER BY name").fetchall()
@@ -551,6 +559,15 @@ def toggle_product_active(id):
     db.execute("UPDATE products SET is_active = 1 - is_active WHERE id=?", (id,))
     db.commit()
     return redirect(request.referrer or url_for("products"))
+
+@app.route("/products/reorder", methods=["POST"])
+def reorder_products():
+    order = request.json.get("order", [])   # list of product ids in new order
+    db = get_db()
+    for i, pid in enumerate(order):
+        db.execute("UPDATE products SET sort_order=? WHERE id=?", (i, pid))
+    db.commit()
+    return {"ok": True}
 
 
 # ── Operations: new ────────────────────────────────────────

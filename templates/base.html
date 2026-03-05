@@ -597,6 +597,7 @@ html.sidebar-pre-collapsed .sidebar * {
 html.sidebar-pre-collapsed .sidebar { width: 56px !important; }
 html.sidebar-pre-collapsed .main { margin-left: 56px !important; }
 </style>
+{% block extra_head %}{% endblock %}
 </head>
 <body x-data="{
   collapsed: localStorage.getItem('sidebar') === 'collapsed'

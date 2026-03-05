@@ -1,6 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Товары{% endblock %}
 {% block breadcrumb %}<span class="sep">Справочники</span><span class="sep">/</span><strong>Товары</strong>{% endblock %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<style>
+.drag-handle { cursor:grab; color:var(--border2); font-size:1rem; padding:0 6px; user-select:none; transition:color 0.12s; }
+.drag-handle:hover { color:var(--text-muted); }
+tr.sortable-ghost { opacity:0.4; background:var(--accent-dim); }
+tr.sortable-chosen { background:var(--surface2); }
+tr.archived-row { opacity:0.55; }
+</style>
+{% endblock %}
 
 {% block content %}
 <div x-data="{
@@ -131,6 +141,7 @@
     <table>
       <thead>
         <tr>
+          <th style="width:32px"></th>
           <th style="width:50px">#</th>
           <th>Название</th>
           <th>Категория</th>
@@ -143,7 +154,8 @@
       </thead>
       <tbody>
         {% for p in products %}
-        <tr>
+        <tr data-id="{{ p.id }}" {% if not p.is_active %}class="archived-row"{% endif %}>
+          <td>{% if p.is_active %}<span class="drag-handle" title="Перетащить">⠿</span>{% endif %}</td>
           <td class="td-mono text-muted">{{ p.id }}</td>
           <td><strong>{{ p.name }}</strong></td>
           <td class="text-muted text-sm">{{ p.cat_name or '—' }}</td>
@@ -201,4 +213,28 @@
   {% endif %}
 </div>
 </div>
+
+<script>
+(function() {
+  var tbody = document.querySelector('table tbody');
+  if (!tbody) return;
+  Sortable.create(tbody, {
+    handle: '.drag-handle',
+    animation: 150,
+    ghostClass: 'sortable-ghost',
+    chosenClass: 'sortable-chosen',
+    // only allow sorting among active rows
+    filter: '.archived-row',
+    onEnd: function() {
+      var order = Array.from(tbody.querySelectorAll('tr[data-id]:not(.archived-row)'))
+                       .map(function(tr) { return parseInt(tr.dataset.id); });
+      fetch('/products/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: order })
+      });
+    }
+  });
+})();
+</script>
 {% endblock %}
