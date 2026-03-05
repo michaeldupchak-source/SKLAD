@@ -139,6 +139,7 @@
       <th>Категория</th>
       <th style="text-align:right;width:80px">Ед. изм.</th>
       <th style="text-align:right;width:100px">Остаток</th>
+      <th style="text-align:right;width:120px">Факт</th>
     </tr>
   </thead>
   <tbody>
@@ -151,6 +152,7 @@
       <td class="num {% if p.current_stock > 0 %}stock-positive{% elif p.current_stock < 0 %}stock-negative{% else %}stock-zero{% endif %}">
         {{ "%.3g" | format(p.current_stock) }}
       </td>
+      <td style="border-bottom:1px solid #bbb"></td>
     </tr>
     {% endfor %}
   </tbody>
@@ -158,6 +160,7 @@
     <tr>
       <td colspan="4">Итого позиций: {{ products | length }}</td>
       <td class="num">{{ products | selectattr('current_stock', 'gt', 0) | list | length }} в наличии</td>
+      <td></td>
     </tr>
   </tfoot>
 </table>
