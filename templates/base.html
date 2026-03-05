@@ -20,18 +20,13 @@
     if (localStorage.getItem('sidebar') === 'collapsed') {
       document.documentElement.classList.add('sidebar-pre-collapsed');
     }
+    // Disable all transitions until Alpine sets the correct sidebar state.
+    // Cleanup happens in x-init (after Alpine has applied :class bindings),
+    // NOT via rAF — rAF fires before Alpine defer-initializes, creating a flash.
     var _noTrans = document.createElement('style');
     _noTrans.id = '_no_trans';
     _noTrans.textContent = '*, *::before, *::after { transition: none !important; animation: none !important; }';
     document.head.appendChild(_noTrans);
-    // Remove after first paint (double-rAF guarantees post-paint)
-    requestAnimationFrame(function() {
-      requestAnimationFrame(function() {
-        var el = document.getElementById('_no_trans');
-        if (el) el.parentNode.removeChild(el);
-        document.documentElement.classList.remove('sidebar-pre-collapsed');
-      });
-    });
   })();
 </script>
 <style>
@@ -592,6 +587,10 @@ html.sidebar-pre-collapsed .main { transition: none !important; }
   collapsed: localStorage.getItem('sidebar') === 'collapsed'
 }" x-init="
   $watch('collapsed', v => localStorage.setItem('sidebar', v ? 'collapsed' : 'open'));
+  // At this point Alpine has already applied :class bindings — safe to restore transitions
+  var s = document.getElementById('_no_trans');
+  if (s) s.parentNode.removeChild(s);
+  document.documentElement.classList.remove('sidebar-pre-collapsed');
 ">
 
 <aside class="sidebar" :class="{ collapsed: collapsed }">
