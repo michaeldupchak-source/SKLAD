@@ -10,10 +10,12 @@ var STOCK_MAP = {{ stock_map | tojson }};
 <div x-data="{
   opType: 'IN',
   rows: [{ pid: '', qty: '', price: '' }],
+  submitting: false,
   stock: STOCK_MAP,
   addRow() { this.rows.push({ pid: '', qty: '', price: '' }) },
   removeRow(i) { if(this.rows.length > 1) this.rows.splice(i, 1) },
   tryAutoAdd(i) {
+    if (this.submitting) return;
     // Auto-add new row when last row has pid+qty filled (for OUT) or pid+qty+price filled (for IN)
     if (i !== this.rows.length - 1) return;
     const r = this.rows[i];
@@ -39,7 +41,8 @@ var STOCK_MAP = {{ stock_map | tojson }};
   }
 }" style="max-width:900px">
 
-<form method="post" action="{{ url_for('create_operation') }}">
+<form method="post" action="{{ url_for('create_operation') }}" @submit="submitting = true">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
 <!-- Type selector -->
 <div class="flex gap-16 mb-20">

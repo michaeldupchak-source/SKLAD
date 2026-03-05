@@ -42,6 +42,7 @@ var INITIAL_ROWS = [
 }" style="max-width:900px">
 
 <form method="post" action="/operations/{{ op.id }}/update">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
 <!-- Type selector -->
 <div class="flex gap-16 mb-20">
