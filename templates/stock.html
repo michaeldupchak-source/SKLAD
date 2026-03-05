@@ -114,7 +114,7 @@
           <td style="text-align:right;background:var(--surface2);border-left:2px solid var(--border2);border-right:2px solid var(--border2);padding-top:14px;padding-bottom:14px">
             <span class="td-mono" style="
               font-size:1rem;font-weight:700;letter-spacing:-0.5px;
-              color:{% if p.current_stock > 0 %}var(--green){% elif p.current_stock < 0 %}var(--red){% else %}var(--text-muted){% endif %}
+              color:{% if is_danger %}var(--accent){% elif p.current_stock > 0 %}var(--green){% elif p.current_stock < 0 %}var(--red){% else %}var(--text-muted){% endif %}
             ">
               {{ "%.3g" | format(p.current_stock) }}{% if p.unit_short %} <span style="font-weight:400;font-size:0.75rem;opacity:0.8">{{ p.unit_short }}</span>{% endif %}
             </span>
