@@ -108,7 +108,8 @@ def init_db():
         category_id INTEGER REFERENCES categories(id),
         unit_id INTEGER REFERENCES units(id),
         description TEXT,
-        current_stock REAL NOT NULL DEFAULT 0
+        current_stock REAL NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1
     );
     CREATE TABLE IF NOT EXISTS operations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,6 +152,11 @@ def init_db():
     existing = [r[1] for r in db.execute("PRAGMA table_info(operations)")]
     if 'user_id' not in existing:
         db.execute("ALTER TABLE operations ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
+        db.commit()
+    # Runtime migration: add is_active to products for existing databases
+    existing_p = [r[1] for r in db.execute("PRAGMA table_info(products)")]
+    if 'is_active' not in existing_p:
+        db.execute("ALTER TABLE products ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
         db.commit()
     db.close()
 
@@ -484,27 +490,31 @@ def delete_unit(id):
 @app.route("/products")
 def products():
     db = get_db()
-    cat_filter = request.args.get("category_id", "")
+    cat_filter    = request.args.get("category_id", "")
+    show_archived = request.args.get("show_archived", "0")
     if cat_filter:
         prods = db.execute("""
             SELECT p.*, c.name as cat_name, u.short_name as unit_short
             FROM products p
             LEFT JOIN categories c ON c.id = p.category_id
             LEFT JOIN units u ON u.id = p.unit_id
-            WHERE p.category_id = ? ORDER BY p.name
-        """, (cat_filter,)).fetchall()
+            WHERE p.category_id = ? AND (p.is_active = 1 OR ? = '1')
+            ORDER BY p.is_active DESC, p.name
+        """, (cat_filter, show_archived)).fetchall()
     else:
         prods = db.execute("""
             SELECT p.*, c.name as cat_name, u.short_name as unit_short
             FROM products p
             LEFT JOIN categories c ON c.id = p.category_id
             LEFT JOIN units u ON u.id = p.unit_id
-            ORDER BY p.name
-        """).fetchall()
+            WHERE p.is_active = 1 OR ? = '1'
+            ORDER BY p.is_active DESC, p.name
+        """, (show_archived,)).fetchall()
     cats      = db.execute("SELECT * FROM categories ORDER BY name").fetchall()
     all_units = db.execute("SELECT * FROM units ORDER BY name").fetchall()
     return render_template("products.html", products=prods, categories=cats,
-                           units=all_units, selected_category=cat_filter)
+                           units=all_units, selected_category=cat_filter,
+                           show_archived=show_archived)
 
 @app.route("/products/create", methods=["POST"])
 def create_product():
@@ -535,6 +545,13 @@ def delete_product(id):
     db.commit()
     return redirect(url_for("products"))
 
+@app.route("/products/<int:id>/toggle_active", methods=["POST"])
+def toggle_product_active(id):
+    db = get_db()
+    db.execute("UPDATE products SET is_active = 1 - is_active WHERE id=?", (id,))
+    db.commit()
+    return redirect(request.referrer or url_for("products"))
+
 
 # ── Operations: new ────────────────────────────────────────
 @app.route("/operations/new")
@@ -542,7 +559,8 @@ def new_operation():
     db = get_db()
     prods = db.execute("""
         SELECT p.*, u.short_name as unit_short FROM products p
-        LEFT JOIN units u ON u.id = p.unit_id ORDER BY p.name
+        LEFT JOIN units u ON u.id = p.unit_id
+        WHERE p.is_active = 1 ORDER BY p.name
     """).fetchall()
     stock_map = {str(p["id"]): float(p["current_stock"]) for p in prods}
     return render_template("operation_new.html", products=prods, stock_map=stock_map)
@@ -620,7 +638,8 @@ def edit_operation(id):
     """, (id,)).fetchall()
     prods     = db.execute("""
         SELECT p.*, u.short_name as unit_short FROM products p
-        LEFT JOIN units u ON u.id = p.unit_id ORDER BY p.name
+        LEFT JOIN units u ON u.id = p.unit_id
+        WHERE p.is_active = 1 ORDER BY p.name
     """).fetchall()
     stock_map = {str(p["id"]): float(p["current_stock"]) for p in prods}
     return render_template("operation_edit.html", op=op, items=items,
@@ -939,7 +958,8 @@ def stock():
         where_parts.append("p.current_stock > 0")
     elif show == "out_of_stock":
         where_parts.append("p.current_stock <= 0")
-    where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+    where_parts.append("p.is_active = 1")
+    where = "WHERE " + " AND ".join(where_parts)
 
     products = db.execute(f"""
         SELECT p.*, c.name as cat_name, u.short_name as unit_short,
