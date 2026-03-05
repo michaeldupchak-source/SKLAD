@@ -17,16 +17,12 @@
     // Fix sidebar flash: inject a no-transitions style immediately,
     // then remove it after two rAF cycles (after first real paint).
     // This prevents the sidebar from animating its width on initial load.
+    // Pre-apply collapsed state before Alpine loads to avoid sidebar flash.
+    // Transitions are suppressed via CSS (sidebar-pre-collapsed), NOT globally,
+    // so Safari doesn't trigger intermediate reflows.
     if (localStorage.getItem('sidebar') === 'collapsed') {
       document.documentElement.classList.add('sidebar-pre-collapsed');
     }
-    // Disable all transitions until Alpine sets the correct sidebar state.
-    // Cleanup happens in x-init (after Alpine has applied :class bindings),
-    // NOT via rAF — rAF fires before Alpine defer-initializes, creating a flash.
-    var _noTrans = document.createElement('style');
-    _noTrans.id = '_no_trans';
-    _noTrans.textContent = '*, *::before, *::after { transition: none !important; animation: none !important; }';
-    document.head.appendChild(_noTrans);
   })();
 </script>
 <style>
@@ -409,6 +405,17 @@ input:focus, textarea:focus, select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-dim);
 }
+/* Fix Chrome autofill background override in dark theme.
+   Chrome ignores background-color on :-webkit-autofill; box-shadow inset is the only way. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--surface2) inset !important;
+  -webkit-text-fill-color: var(--text) !important;
+  caret-color: var(--text);
+  border-color: var(--border) !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
 select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7492' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
@@ -576,21 +583,29 @@ textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 [x-cloak] { display: none !important; }
 
-/* Fix sidebar pre-collapsed state to prevent flash */
+/* Fix sidebar pre-collapsed state to prevent flash on page load.
+   Transitions are suppressed ONLY on sidebar and its children (not globally),
+   which avoids Safari intermediate reflows caused by _no_trans global style.
+   Class is removed in x-init via $nextTick — after Alpine has applied
+   :class bindings, so .collapsed is already in DOM. No visual change occurs
+   when removing this class, therefore no transition fires. */
+html.sidebar-pre-collapsed .sidebar,
+html.sidebar-pre-collapsed .sidebar * {
+  transition: none !important;
+  animation: none !important;
+}
 html.sidebar-pre-collapsed .sidebar { width: 56px !important; }
 html.sidebar-pre-collapsed .main { margin-left: 56px !important; }
-html.sidebar-pre-collapsed .sidebar { transition: none !important; }
-html.sidebar-pre-collapsed .main { transition: none !important; }
 </style>
 </head>
 <body x-data="{
   collapsed: localStorage.getItem('sidebar') === 'collapsed'
 }" x-init="
   $watch('collapsed', v => localStorage.setItem('sidebar', v ? 'collapsed' : 'open'));
-  // At this point Alpine has already applied :class bindings — safe to restore transitions
-  var s = document.getElementById('_no_trans');
-  if (s) s.parentNode.removeChild(s);
-  document.documentElement.classList.remove('sidebar-pre-collapsed');
+  // $nextTick runs after Alpine has flushed :class bindings to DOM.
+  // At that point .sidebar already has 'collapsed' class, so removing
+  // sidebar-pre-collapsed causes zero visual change — no transition fires.
+  $nextTick(() => { document.documentElement.classList.remove('sidebar-pre-collapsed'); });
 ">
 
 <aside class="sidebar" :class="{ collapsed: collapsed }">
