@@ -215,19 +215,22 @@ tr.archived-row { opacity:0.55; }
 (function() {
   var tbody = document.querySelector('table tbody');
   if (!tbody) return;
+  var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
   Sortable.create(tbody, {
     handle: '.drag-handle',
     animation: 150,
     ghostClass: 'sortable-ghost',
     chosenClass: 'sortable-chosen',
-    // only allow sorting among active rows
     filter: '.archived-row',
     onEnd: function() {
       var order = Array.from(tbody.querySelectorAll('tr[data-id]:not(.archived-row)'))
                        .map(function(tr) { return parseInt(tr.dataset.id); });
       fetch('/products/reorder', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken
+        },
         body: JSON.stringify({ order: order })
       });
     }
