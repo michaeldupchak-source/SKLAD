@@ -1195,10 +1195,10 @@ def inventory_session(id):
         return "Сессия не найдена", 404
 
     if request.method == "POST" and session['status'] == 'draft':
-        items = db.execute(
+        items_db = db.execute(
             "SELECT * FROM inventory_items WHERE session_id=?", (id,)
         ).fetchall()
-        for item in items:
+        for item in items_db:
             actual_raw = request.form.get(f"actual_{item['id']}", "").strip()
             reason     = request.form.get(f"reason_{item['id']}", "")
             price_raw  = request.form.get(f"price_{item['id']}", "").strip()
@@ -1221,6 +1221,11 @@ def inventory_session(id):
                 WHERE id=?
             """, (actual, delta, reason, price, item['id']))
         db.commit()
+
+        save_action = request.form.get("save_action", "save")
+        if save_action == "complete":
+            return redirect(url_for('inventory_complete', id=id))
+
         flash("Данные сохранены")
         return redirect(url_for('inventory_session', id=id))
 

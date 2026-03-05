@@ -10,10 +10,13 @@
       Создайте сессию, введите фактические остатки и подтвердите — система автоматически создаст корректирующие операции.
     </div>
   </div>
-  <form method="post" action="{{ url_for('inventory_new') }}" style="flex-shrink:0;margin-left:20px">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit" class="btn btn-primary">+ Новая инвентаризация</button>
-  </form>
+  <div style="display:flex;gap:8px;flex-shrink:0;margin-left:20px">
+    <a href="{{ url_for('stock_print') }}" target="_blank" class="btn btn-ghost">🖨 Печать списка</a>
+    <form method="post" action="{{ url_for('inventory_new') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-primary">+ Новая инвентаризация</button>
+    </form>
+  </div>
 </div>
 
 {% with messages = get_flashed_messages() %}

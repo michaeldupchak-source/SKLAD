@@ -36,17 +36,11 @@
   </div>
   {% if session.status == 'draft' %}
   <div style="display:flex;gap:8px;flex-shrink:0">
-    <form method="post" action="{{ url_for('inventory_session', id=session.id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <!-- hidden fields filled by JS before save -->
-      <div id="save-fields"></div>
-      <button type="submit" class="btn btn-ghost btn-sm" id="btn-save">💾 Сохранить черновик</button>
-    </form>
-    <form method="post" action="{{ url_for('inventory_complete', id=session.id) }}"
-      onsubmit="return confirmComplete(event)">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="btn btn-primary btn-sm">✓ Завершить инвентаризацию</button>
-    </form>
+    <button type="submit" form="main-form" name="save_action" value="save"
+      class="btn btn-ghost btn-sm">💾 Сохранить черновик</button>
+    <button type="submit" form="main-form" name="save_action" value="complete"
+      class="btn btn-primary btn-sm"
+      onclick="return confirmComplete(event)">✓ Завершить инвентаризацию</button>
   </div>
   {% endif %}
 </div>

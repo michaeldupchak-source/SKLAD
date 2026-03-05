@@ -60,9 +60,7 @@
     <button type="submit" class="btn btn-primary btn-sm">Применить</button>
     <a href="{{ url_for('stock') }}" class="btn btn-ghost btn-sm">Сбросить</a>
   </div>
-  <div style="margin-left:auto;margin-top:18px;display:flex;gap:8px">
-    <a href="{{ url_for('stock_print', category_id=filters.category_id, search=filters.search, show=filters.show) }}"
-      target="_blank" class="btn btn-ghost btn-sm">🖨 Печать</a>
+  <div style="margin-left:auto;margin-top:18px">
     <a href="{{ url_for('new_operation') }}" class="btn btn-primary btn-sm">+ Новая операция</a>
   </div>
 </div>
