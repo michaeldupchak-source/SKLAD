@@ -19,7 +19,7 @@
 var STOCK_MAP = {{ stock_map | tojson }};
 var INITIAL_ROWS = [
   {% for item in items %}
-  { pid: "{{ item.product_id }}", qty: "{{ item.quantity }}", price: "{{ item.price_per_unit or '' }}" }{% if not loop.last %},{% endif %}
+  { pid: "{{ item.product_id }}", qty: "{{ item.quantity | int }}", price: "{{ item.price_per_unit or '' }}" }{% if not loop.last %},{% endif %}
   {% endfor %}
 ];
 </script>
@@ -130,7 +130,7 @@ var INITIAL_ROWS = [
             </td>
             <td>
               <input type="number" name="quantity[]" x-model="row.qty"
-                min="0.001" step="any" required placeholder="0" style="font-family:var(--mono)"
+                min="1" step="1" required placeholder="0" style="font-family:var(--mono)"
                 :style="rowOverflow(row) ? 'border-color:var(--red)' : ''">
               <div x-show="rowOverflow(row)" style="margin-top:4px;font-size:0.72rem;color:var(--red);font-family:var(--mono);display:flex;align-items:center;gap:4px">
                 <span>⚠</span><span>превышает остаток</span>
@@ -138,7 +138,7 @@ var INITIAL_ROWS = [
             </td>
             <td x-show="opType==='IN'">
               <input type="number" name="price_per_unit[]" x-model="row.price"
-                min="0" step="any" placeholder="0.00" style="font-family:var(--mono)">
+                min="0" step="0.01" placeholder="0.00" style="font-family:var(--mono)">
             </td>
             <td x-show="opType==='IN'" style="text-align:right" class="td-mono text-accent">
               <span x-text="rowTotal(row).toFixed(2) + ' ₽'"></span>

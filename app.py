@@ -561,7 +561,10 @@ def create_operation():
     for i, pid in enumerate(product_ids):
         if not pid or i >= len(quantities) or not quantities[i]:
             continue
-        qty   = float(quantities[i])
+        raw_qty = float(quantities[i])
+        qty = int(raw_qty)  # enforce integer quantity
+        if qty < 1:
+            continue
         price = float(prices[i]) if i < len(prices) and prices[i] else None
         items.append((int(pid), qty, price))
 
@@ -650,7 +653,9 @@ def update_operation(id):
     for i, pid in enumerate(product_ids):
         if not pid or i >= len(quantities) or not quantities[i]:
             continue
-        qty   = float(quantities[i])
+        qty = int(float(quantities[i]))  # enforce integer quantity
+        if qty < 1:
+            continue
         price = float(prices[i]) if i < len(prices) and prices[i] else None
         if op_type == "OUT":
             item_cur  = db.execute(
@@ -779,7 +784,9 @@ def stats_detail():
     chart_data = db.execute(f"""
         SELECT strftime('%Y-%m', o.created_at) as month,
             SUM(CASE WHEN o.type='IN' THEN oi.quantity ELSE 0 END) as in_qty,
-            SUM(CASE WHEN o.type='OUT' THEN oi.quantity ELSE 0 END) as out_qty
+            SUM(CASE WHEN o.type='OUT' THEN oi.quantity ELSE 0 END) as out_qty,
+            SUM(CASE WHEN o.type='IN' THEN oi.quantity*COALESCE(oi.price_per_unit,0) ELSE 0 END) as in_total,
+            SUM(CASE WHEN o.type='OUT' THEN oi.quantity*COALESCE(oi.price_per_unit,0) ELSE 0 END) as out_total
         FROM operations o JOIN operation_items oi ON oi.operation_id=o.id
         JOIN products p ON p.id=oi.product_id
         WHERE o.created_at >= date('now','-12 months') {prod_filter}
