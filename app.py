@@ -944,7 +944,7 @@ def stats():
         LEFT JOIN units u ON u.id=p.unit_id
         LEFT JOIN operation_items oi ON oi.product_id=p.id
         LEFT JOIN operations o ON o.id=oi.operation_id {op_where}
-        GROUP BY p.id, p.name, u.short_name, p.current_stock ORDER BY p.name
+        GROUP BY p.id, p.name, u.short_name, p.current_stock ORDER BY p.sort_order, p.name
     """, op_params).fetchall()
 
     all_products   = db.execute("SELECT id, name FROM products ORDER BY name").fetchall()

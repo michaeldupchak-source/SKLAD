@@ -115,13 +115,10 @@ tr.archived-row { opacity:0.55; }
     </select>
   </div>
   <div style="display:flex;align-items:center;gap:8px;margin-top:18px">
-    <input type="checkbox" name="show_archived" value="1" id="show_archived"
-      {% if show_archived == '1' %}checked{% endif %}
-      onchange="this.form.submit()"
-      style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;flex-shrink:0">
-    <label for="show_archived" style="margin:0;font-size:0.78rem;color:var(--text-muted);cursor:pointer;text-transform:none;letter-spacing:0">
-      Показать архивные
-    </label>
+    <a href="{{ url_for('products', category_id=selected_category, show_archived='0' if show_archived == '1' else '1') }}"
+      class="btn btn-sm {% if show_archived == '1' %}btn-primary{% else %}btn-ghost{% endif %}">
+      {% if show_archived == '1' %}Скрыть архивные{% else %}Показать архивные{% endif %}
+    </a>
   </div>
   {% if selected_category %}
   <a href="{{ url_for('products') }}" class="btn btn-ghost btn-sm" style="margin-top:18px;">✕ Сбросить</a>
