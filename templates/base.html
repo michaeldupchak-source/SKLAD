@@ -13,10 +13,25 @@
     // Fix #12: Apply theme before render to prevent flash
     var theme = '{% if current_user.is_authenticated and current_user.theme == "light" %}light{% else %}dark{% endif %}';
     document.documentElement.setAttribute('data-theme', theme);
-    // Fix sidebar flash: pre-apply collapsed class before Alpine loads
+
+    // Fix sidebar flash: inject a no-transitions style immediately,
+    // then remove it after two rAF cycles (after first real paint).
+    // This prevents the sidebar from animating its width on initial load.
     if (localStorage.getItem('sidebar') === 'collapsed') {
       document.documentElement.classList.add('sidebar-pre-collapsed');
     }
+    var _noTrans = document.createElement('style');
+    _noTrans.id = '_no_trans';
+    _noTrans.textContent = '*, *::before, *::after { transition: none !important; animation: none !important; }';
+    document.head.appendChild(_noTrans);
+    // Remove after first paint (double-rAF guarantees post-paint)
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        var el = document.getElementById('_no_trans');
+        if (el) el.parentNode.removeChild(el);
+        document.documentElement.classList.remove('sidebar-pre-collapsed');
+      });
+    });
   })();
 </script>
 <style>
@@ -577,9 +592,6 @@ html.sidebar-pre-collapsed .main { transition: none !important; }
   collapsed: localStorage.getItem('sidebar') === 'collapsed'
 }" x-init="
   $watch('collapsed', v => localStorage.setItem('sidebar', v ? 'collapsed' : 'open'));
-  document.documentElement.removeAttribute('data-theme');
-  document.documentElement.setAttribute('data-theme', '{% if current_user.is_authenticated and current_user.theme in ("dark", "light") %}{{ current_user.theme }}{% else %}dark{% endif %}');
-  document.documentElement.classList.remove('sidebar-pre-collapsed');
 ">
 
 <aside class="sidebar" :class="{ collapsed: collapsed }">
