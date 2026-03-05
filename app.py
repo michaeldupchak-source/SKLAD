@@ -996,7 +996,7 @@ def stock():
         FROM products p
         LEFT JOIN categories c ON c.id=p.category_id
         LEFT JOIN units u ON u.id=p.unit_id
-        {where} ORDER BY p.name
+        {where} ORDER BY p.sort_order, p.name
     """, params).fetchall()
 
     categories       = db.execute("SELECT * FROM categories ORDER BY name").fetchall()
