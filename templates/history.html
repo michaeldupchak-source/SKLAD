@@ -21,6 +21,7 @@
       <option value="">Все</option>
       <option value="IN" {% if filters.op_type=='IN' %}selected{% endif %}>▲ Пополнение</option>
       <option value="OUT" {% if filters.op_type=='OUT' %}selected{% endif %}>▼ Изъятие</option>
+      <option value="ADJUST" {% if filters.op_type=='ADJUST' %}selected{% endif %}>⊡ Корректировка</option>
     </select>
   </div>
   <div class="form-group mb-0">
@@ -82,8 +83,10 @@
           <td>
             {% if op.type == 'IN' %}
             <span class="badge badge-in">▲ ПРИХОД</span>
-            {% else %}
+            {% elif op.type == 'OUT' %}
             <span class="badge badge-out">▼ РАСХОД</span>
+            {% else %}
+            <span class="badge badge-neutral" style="color:var(--accent)">⊡ КОРРЕКТИРОВКА</span>
             {% endif %}
           </td>
           <td class="td-mono text-muted" style="font-size:0.75rem">
@@ -152,8 +155,10 @@
           </div>
           {% if op.type == 'IN' %}
           <span class="badge badge-in" style="font-size:0.78rem;padding:4px 10px">▲ ПОПОЛНЕНИЕ</span>
-          {% else %}
+          {% elif op.type == 'OUT' %}
           <span class="badge badge-out" style="font-size:0.78rem;padding:4px 10px">▼ ИЗЪЯТИЕ</span>
+          {% else %}
+          <span class="badge badge-neutral" style="font-size:0.78rem;padding:4px 10px;color:var(--accent)">⊡ КОРРЕКТИРОВКА</span>
           {% endif %}
         </div>
         <button type="button" class="btn btn-ghost btn-sm" @click="detail=null">✕</button>

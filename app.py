@@ -143,13 +143,30 @@ def init_db():
     );
     CREATE TABLE IF NOT EXISTS operations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL CHECK(type IN ('IN','OUT')),
+        type TEXT NOT NULL CHECK(type IN ('IN','OUT','ADJUST')),
         created_at TEXT NOT NULL,
         comment TEXT,
         user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
     );
     -- Migration: add user_id to existing installs (safe if column already exists)
     CREATE INDEX IF NOT EXISTS idx_operations_user_id ON operations(user_id);
+    CREATE TABLE IF NOT EXISTS inventory_sessions (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at  TEXT NOT NULL,
+        completed_at TEXT,
+        user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        status      TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','completed'))
+    );
+    CREATE TABLE IF NOT EXISTS inventory_items (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id   INTEGER NOT NULL REFERENCES inventory_sessions(id) ON DELETE CASCADE,
+        product_id   INTEGER NOT NULL REFERENCES products(id),
+        expected_qty REAL NOT NULL,
+        actual_qty   REAL,
+        delta        REAL,
+        reason       TEXT,
+        price        REAL
+    );
     CREATE TABLE IF NOT EXISTS operation_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         operation_id INTEGER NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
@@ -194,6 +211,21 @@ def init_db():
         rows = db.execute("SELECT id FROM products ORDER BY name").fetchall()
         for i, (pid,) in enumerate(rows):
             db.execute("UPDATE products SET sort_order=? WHERE id=?", (i, pid))
+        db.commit()
+    # Runtime migration: create inventory tables for existing databases
+    tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if 'inventory_sessions' not in tables:
+        db.execute("""CREATE TABLE inventory_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL, completed_at TEXT,
+            user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','completed')))""")
+        db.execute("""CREATE TABLE inventory_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL REFERENCES inventory_sessions(id) ON DELETE CASCADE,
+            product_id INTEGER NOT NULL REFERENCES products(id),
+            expected_qty REAL NOT NULL, actual_qty REAL,
+            delta REAL, reason TEXT, price REAL)""")
         db.commit()
     db.close()
 
@@ -914,7 +946,7 @@ def history():
         conditions.append("o.created_at >= ?"); params.append(date_from)
     if date_to:
         conditions.append("o.created_at <= ?"); params.append(date_to + " 23:59:59")
-    if op_type in ("IN", "OUT"):
+    if op_type in ("IN", "OUT", "ADJUST"):
         conditions.append("o.type = ?"); params.append(op_type)
     if product_id:
         conditions.append("EXISTS (SELECT 1 FROM operation_items oi WHERE oi.operation_id=o.id AND oi.product_id=?)")
@@ -1095,6 +1127,166 @@ def stock_print():
     now = datetime.now().strftime("%d.%m.%Y %H:%M")
     return render_template("stock_print.html", products=products, now=now,
                            filters={"category_id": category_id, "search": search, "show": show})
+
+
+# ── Inventory ─────────────────────────────────────────────────────────────────
+
+@app.route("/inventory")
+def inventory():
+    db = get_db()
+    sessions = db.execute("""
+        SELECT s.*, u.username
+        FROM inventory_sessions s
+        LEFT JOIN users u ON u.id = s.user_id
+        ORDER BY s.created_at DESC
+    """).fetchall()
+    return render_template("inventory.html", sessions=sessions)
+
+
+@app.route("/inventory/new", methods=["POST"])
+def inventory_new():
+    db  = get_db()
+    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    # Only one draft per user allowed
+    existing = db.execute(
+        "SELECT id FROM inventory_sessions WHERE status='draft' AND user_id=?",
+        (current_user.id,)
+    ).fetchone()
+    if existing:
+        return redirect(url_for('inventory_session', id=existing['id']))
+    cur = db.execute(
+        "INSERT INTO inventory_sessions (created_at, user_id, status) VALUES (?,?,'draft')",
+        (now, current_user.id)
+    )
+    session_id = cur.lastrowid
+    # Snapshot current stock for all active products
+    products = db.execute(
+        "SELECT id, current_stock FROM products WHERE is_active=1 ORDER BY sort_order, name"
+    ).fetchall()
+    for p in products:
+        # Last IN price for financial evaluation
+        price_row = db.execute("""
+            SELECT oi.price_per_unit FROM operation_items oi
+            JOIN operations o ON o.id = oi.operation_id
+            WHERE oi.product_id = ? AND o.type = 'IN' AND oi.price_per_unit IS NOT NULL
+            ORDER BY o.created_at DESC LIMIT 1
+        """, (p['id'],)).fetchone()
+        price = price_row['price_per_unit'] if price_row else None
+        db.execute(
+            "INSERT INTO inventory_items (session_id, product_id, expected_qty, price) VALUES (?,?,?,?)",
+            (session_id, p['id'], p['current_stock'], price)
+        )
+    db.commit()
+    return redirect(url_for('inventory_session', id=session_id))
+
+
+ADJUST_REASONS = [
+    ('accounting', 'Ошибка учёта'),
+    ('writeoff',   'Списание (физическая потеря)'),
+    ('regrade',    'Пересортица'),
+    ('theft',      'Кража'),
+]
+
+@app.route("/inventory/<int:id>", methods=["GET", "POST"])
+def inventory_session(id):
+    db = get_db()
+    session = db.execute("SELECT * FROM inventory_sessions WHERE id=?", (id,)).fetchone()
+    if not session:
+        return "Сессия не найдена", 404
+
+    if request.method == "POST" and session['status'] == 'draft':
+        items = db.execute(
+            "SELECT * FROM inventory_items WHERE session_id=?", (id,)
+        ).fetchall()
+        for item in items:
+            actual_raw = request.form.get(f"actual_{item['id']}", "").strip()
+            reason     = request.form.get(f"reason_{item['id']}", "")
+            price_raw  = request.form.get(f"price_{item['id']}", "").strip()
+            if actual_raw == "":
+                continue
+            try:
+                actual = float(actual_raw)
+            except ValueError:
+                continue
+            delta = actual - item['expected_qty']
+            price = item['price']
+            if price_raw:
+                try:
+                    price = float(price_raw)
+                except ValueError:
+                    pass
+            db.execute("""
+                UPDATE inventory_items
+                SET actual_qty=?, delta=?, reason=?, price=?
+                WHERE id=?
+            """, (actual, delta, reason, price, item['id']))
+        db.commit()
+        flash("Данные сохранены")
+        return redirect(url_for('inventory_session', id=id))
+
+    items = db.execute("""
+        SELECT ii.*, p.name as product_name, u.short_name as unit_short
+        FROM inventory_items ii
+        JOIN products p ON p.id = ii.product_id
+        LEFT JOIN units u ON u.id = p.unit_id
+        WHERE ii.session_id = ?
+        ORDER BY p.sort_order, p.name
+    """, (id,)).fetchall()
+    return render_template("inventory_session.html",
+                           session=session, items=items, reasons=ADJUST_REASONS)
+
+
+@app.route("/inventory/<int:id>/complete", methods=["POST"])
+def inventory_complete(id):
+    db = get_db()
+    session = db.execute("SELECT * FROM inventory_sessions WHERE id=?", (id,)).fetchone()
+    if not session or session['status'] != 'draft':
+        return redirect(url_for('inventory'))
+
+    items = db.execute(
+        "SELECT * FROM inventory_items WHERE session_id=? AND actual_qty IS NOT NULL AND delta != 0",
+        (id,)
+    ).fetchall()
+
+    if items:
+        now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        # One ADJUST operation per session
+        cur = db.execute(
+            "INSERT INTO operations (type, created_at, comment, user_id) VALUES ('ADJUST',?,?,?)",
+            (now, f"Инвентаризация #{id}", current_user.id)
+        )
+        op_id = cur.lastrowid
+
+        for item in items:
+            delta = item['delta']
+            price = item['price'] or 0
+            db.execute(
+                "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit) VALUES (?,?,?,?)",
+                (op_id, item['product_id'], abs(delta), price if delta < 0 else price)
+            )
+            # Atomically update stock
+            db.execute(
+                "UPDATE products SET current_stock = current_stock + ? WHERE id=?",
+                (delta, item['product_id'])
+            )
+
+    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    db.execute(
+        "UPDATE inventory_sessions SET status='completed', completed_at=? WHERE id=?",
+        (now, id)
+    )
+    db.commit()
+    flash(f"Инвентаризация завершена. Скорректировано позиций: {len(items)}")
+    return redirect(url_for('inventory'))
+
+
+@app.route("/inventory/<int:id>/delete", methods=["POST"])
+def inventory_delete(id):
+    db = get_db()
+    db.execute("DELETE FROM inventory_sessions WHERE id=? AND status='draft'", (id,))
+    db.commit()
+    return redirect(url_for('inventory'))
+
 
 if __name__ == "__main__":
     init_db()

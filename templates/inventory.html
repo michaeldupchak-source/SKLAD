@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Инвентаризация{% endblock %}
+{% block breadcrumb %}<strong>Инвентаризация</strong>{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+  <div>
+    <div style="font-size:0.72rem;font-family:var(--mono);color:var(--text-muted);letter-spacing:1px;margin-bottom:4px">РЕЖИМ ИНВЕНТАРИЗАЦИИ</div>
+    <div style="font-size:0.85rem;color:var(--text-muted);line-height:1.5">
+      Создайте сессию, введите фактические остатки и подтвердите — система автоматически создаст корректирующие операции.
+    </div>
+  </div>
+  <form method="post" action="{{ url_for('inventory_new') }}" style="flex-shrink:0;margin-left:20px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn btn-primary">+ Новая инвентаризация</button>
+  </form>
+</div>
+
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+  <div style="background:var(--green-dim);border:1px solid rgba(62,207,142,0.3);border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:0.85rem;color:var(--green)">
+    {{ messages[0] }}
+  </div>
+  {% endif %}
+{% endwith %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Сессии инвентаризации ({{ sessions | length }})</span>
+  </div>
+  {% if sessions %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:50px">#</th>
+          <th style="width:120px">Статус</th>
+          <th>Начата</th>
+          <th>Завершена</th>
+          <th>Пользователь</th>
+          <th style="text-align:right;width:120px">Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sessions %}
+        <tr>
+          <td class="td-mono text-muted">{{ s.id }}</td>
+          <td>
+            {% if s.status == 'draft' %}
+            <span class="badge" style="background:var(--accent-dim);color:var(--accent);border:1px solid rgba(232,196,74,0.3)">◎ Черновик</span>
+            {% else %}
+            <span class="badge badge-in">✓ Завершена</span>
+            {% endif %}
+          </td>
+          <td class="td-mono text-muted" style="font-size:0.75rem">
+            {{ s.created_at[:10].replace('-','.') }}
+            <span style="opacity:0.6">{{ s.created_at[11:16] }}</span>
+          </td>
+          <td class="td-mono text-muted" style="font-size:0.75rem">
+            {% if s.completed_at %}
+            {{ s.completed_at[:10].replace('-','.') }}
+            <span style="opacity:0.6">{{ s.completed_at[11:16] }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-muted text-sm">{{ s.username or '—' }}</td>
+          <td style="text-align:right">
+            <div class="flex gap-8 justify-end">
+              <a href="{{ url_for('inventory_session', id=s.id) }}" class="btn btn-ghost btn-sm">
+                {% if s.status == 'draft' %}Заполнить{% else %}Просмотр{% endif %}
+              </a>
+              {% if s.status == 'draft' %}
+              <form method="post" action="{{ url_for('inventory_delete', id=s.id) }}" style="margin:0"
+                onsubmit="return confirm('Удалить черновик инвентаризации #{{ s.id }}?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-danger btn-sm">✕</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon">⊠</div>
+    <p>Инвентаризаций ещё не проводилось</p>
+    <form method="post" action="{{ url_for('inventory_new') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-primary btn-sm">Начать первую</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
