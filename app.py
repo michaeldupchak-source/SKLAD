@@ -621,7 +621,7 @@ def new_operation():
     prods = db.execute("""
         SELECT p.*, u.short_name as unit_short FROM products p
         LEFT JOIN units u ON u.id = p.unit_id
-        WHERE p.is_active = 1 ORDER BY p.name
+        WHERE p.is_active = 1 ORDER BY p.sort_order, p.name
     """).fetchall()
     stock_map = {str(p["id"]): float(p["current_stock"]) for p in prods}
     return render_template("operation_new.html", products=prods, stock_map=stock_map)
@@ -700,7 +700,7 @@ def edit_operation(id):
     prods     = db.execute("""
         SELECT p.*, u.short_name as unit_short FROM products p
         LEFT JOIN units u ON u.id = p.unit_id
-        WHERE p.is_active = 1 ORDER BY p.name
+        WHERE p.is_active = 1 ORDER BY p.sort_order, p.name
     """).fetchall()
     stock_map = {str(p["id"]): float(p["current_stock"]) for p in prods}
     return render_template("operation_edit.html", op=op, items=items,
@@ -849,7 +849,7 @@ def stats_detail():
         LEFT JOIN operation_items oi ON oi.product_id = p.id {prod_filter}
         LEFT JOIN operations o ON o.id = oi.operation_id AND {op_where}
         WHERE 1=1 {prod_filter.replace('AND oi.product_id','AND p.id').replace('AND p.category_id','AND p.category_id')}
-        GROUP BY p.id ORDER BY p.name
+        GROUP BY p.id ORDER BY p.sort_order, p.name
     """, prod_params + op_params + prod_params).fetchall()
 
     ops_raw = db.execute(f"""
@@ -881,7 +881,7 @@ def stats_detail():
         GROUP BY month ORDER BY month
     """, prod_params).fetchall()
 
-    all_products   = db.execute("SELECT id, name FROM products ORDER BY name").fetchall()
+    all_products   = db.execute("SELECT id, name FROM products WHERE is_active=1 ORDER BY sort_order, name").fetchall()
     all_categories = db.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
     return render_template("stats_detail.html",
         subject=subject, subject_type=subject_type, rows=rows, ops=ops_with_items,
@@ -941,7 +941,7 @@ def history():
         """, (op["id"],)).fetchall()
         ops_with_items.append({"op": op, "items": items})
 
-    all_products = db.execute("SELECT id, name FROM products ORDER BY name").fetchall()
+    all_products = db.execute("SELECT id, name FROM products WHERE is_active=1 ORDER BY sort_order, name").fetchall()
     all_users    = db.execute("SELECT id, username FROM users ORDER BY username").fetchall()
     pages   = (total + limit - 1) // limit
     filters = {"date_from": date_from, "date_to": date_to,
@@ -991,7 +991,7 @@ def stats():
         GROUP BY p.id, p.name, u.short_name, p.current_stock ORDER BY p.sort_order, p.name
     """, op_params).fetchall()
 
-    all_products   = db.execute("SELECT id, name FROM products ORDER BY name").fetchall()
+    all_products   = db.execute("SELECT id, name FROM products WHERE is_active=1 ORDER BY sort_order, name").fetchall()
     all_categories = db.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
     return render_template("stats.html", rows=rows,
         total_in_qty=sum(r["in_qty"] for r in rows),
