@@ -200,6 +200,41 @@
 
 </div><!-- /grid -->
 
+{% if current_user.role == 'admin' %}
+<div class="card mb-20">
+  <div class="card-title" style="margin-bottom:4px">⚠ Умный расчёт опасного остатка</div>
+  <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:16px;line-height:1.5">
+    Товары с остатком ниже среднего расхода за указанный период подсвечиваются в разделе <strong>Наличие</strong>.
+  </div>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="danger_stock">
+    <div class="grid-2" style="gap:20px;margin-bottom:20px">
+      <div class="form-group mb-0">
+        <label>Режим расчёта</label>
+        <select name="danger_stock_mode">
+          <option value="recent"  {% if danger_mode == 'recent'  %}selected{% endif %}>За последние N недель</option>
+          <option value="alltime" {% if danger_mode == 'alltime' %}selected{% endif %}>За всё время ÷ N недель</option>
+        </select>
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:6px;line-height:1.4">
+          <strong>За последние N:</strong> учитывает только недавние расходы — точнее для сезонных товаров.<br>
+          <strong>За всё время:</strong> усредняет всю историю — стабильнее для товаров с редкими операциями.
+        </div>
+      </div>
+      <div class="form-group mb-0">
+        <label>Количество недель (N)</label>
+        <input type="number" name="danger_stock_weeks" value="{{ danger_weeks }}" min="1" max="52" step="1" style="max-width:120px">
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:6px;line-height:1.4">
+          Порог = средний расход за 1 неделю по выбранному режиму.<br>
+          Рекомендуется: <strong>2–4 недели</strong>.
+        </div>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
+  </form>
+</div>
+{% endif %}
+
 <script>
 // Highlight selected theme card on click
 document.querySelectorAll('.theme-radio').forEach(radio => {

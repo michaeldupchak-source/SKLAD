@@ -76,6 +76,35 @@ def set_setting(db, key, value):
     db.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?,?)", (key, value))
 
 
+def calc_danger_thresholds(db, mode, weeks):
+    """
+    Returns dict {product_id: avg_weekly_consumption} for all active products.
+    mode: 'recent' — last N weeks only; 'alltime' — all history divided by N weeks.
+    A product is considered dangerous when current_stock < threshold.
+    """
+    weeks = max(1, int(weeks))
+    if mode == 'recent':
+        from datetime import datetime, timedelta
+        cutoff = (datetime.utcnow() - timedelta(weeks=weeks)).strftime('%Y-%m-%d %H:%M:%S')
+        rows = db.execute("""
+            SELECT oi.product_id, COALESCE(SUM(oi.quantity), 0) as total_out
+            FROM operation_items oi
+            JOIN operations o ON o.id = oi.operation_id
+            WHERE o.type = 'OUT' AND o.created_at >= ?
+            GROUP BY oi.product_id
+        """, (cutoff,)).fetchall()
+        return {r['product_id']: r['total_out'] / weeks for r in rows}
+    else:  # alltime
+        rows = db.execute("""
+            SELECT oi.product_id, COALESCE(SUM(oi.quantity), 0) as total_out
+            FROM operation_items oi
+            JOIN operations o ON o.id = oi.operation_id
+            WHERE o.type = 'OUT'
+            GROUP BY oi.product_id
+        """).fetchall()
+        return {r['product_id']: r['total_out'] / weeks for r in rows}
+
+
 def init_db():
     db = sqlite3.connect(DB_PATH)
     db.execute("PRAGMA foreign_keys = ON")
@@ -368,17 +397,32 @@ def settings():
                 db.commit()
                 flash('Пароль изменён')
 
+        elif action == 'danger_stock' and current_user.role == 'admin':
+            mode  = request.form.get('danger_stock_mode', 'recent')
+            weeks = request.form.get('danger_stock_weeks', '2')
+            if mode in ('recent', 'alltime') and weeks.isdigit() and 1 <= int(weeks) <= 52:
+                set_setting(db, 'danger_stock_mode',  mode)
+                set_setting(db, 'danger_stock_weeks', weeks)
+                db.commit()
+                flash('Настройки опасного остатка сохранены')
+            else:
+                flash('Некорректные значения')
+
         return redirect(url_for('settings'))
 
-    tz_name     = get_setting('timezone', 'UTC')
-    users_list  = db.execute("SELECT * FROM users ORDER BY created_at").fetchall()
-    user_theme  = db.execute("SELECT theme FROM users WHERE id=?",
-                             (current_user.id,)).fetchone()['theme']
+    tz_name      = get_setting('timezone', 'UTC')
+    danger_mode  = get_setting('danger_stock_mode',  'recent')
+    danger_weeks = get_setting('danger_stock_weeks', '2')
+    users_list   = db.execute("SELECT * FROM users ORDER BY created_at").fetchall()
+    user_theme   = db.execute("SELECT theme FROM users WHERE id=?",
+                              (current_user.id,)).fetchone()['theme']
     return render_template('settings.html',
         tz_name=tz_name,
         timezones=COMMON_TIMEZONES,
         users=users_list,
         current_theme=user_theme,
+        danger_mode=danger_mode,
+        danger_weeks=int(danger_weeks),
     )
 
 
@@ -1006,12 +1050,18 @@ def stock():
         p["current_stock"] * p["last_price"]
         for p in products if p["current_stock"] > 0 and p["last_price"]
     )
+    danger_mode  = get_setting('danger_stock_mode',  'recent')
+    danger_weeks = get_setting('danger_stock_weeks', '2')
+    danger_thresholds = calc_danger_thresholds(db, danger_mode, danger_weeks)
+
     return render_template("stock.html",
         products=products, categories=categories,
         total_items=len(products),
         in_stock_count=in_stock_count,
         out_of_stock_count=out_stock_count,
         total_stock_value=total_stock_value,
+        danger_thresholds=danger_thresholds,
+        danger_weeks=int(danger_weeks),
         filters={"category_id": category_id, "search": search, "show": show})
 
 @app.route("/stock/print")
