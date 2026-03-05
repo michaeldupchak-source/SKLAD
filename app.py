@@ -1014,6 +1014,38 @@ def stock():
         total_stock_value=total_stock_value,
         filters={"category_id": category_id, "search": search, "show": show})
 
+@app.route("/stock/print")
+def stock_print():
+    db          = get_db()
+    category_id = request.args.get("category_id", "")
+    search      = request.args.get("search", "").strip()
+    show        = request.args.get("show", "all")
+
+    where_parts, params = [], []
+    if category_id:
+        where_parts.append("p.category_id = ?"); params.append(category_id)
+    if search:
+        where_parts.append("p.name LIKE ?"); params.append(f"%{search}%")
+    if show == "in_stock":
+        where_parts.append("p.current_stock > 0")
+    elif show == "out_of_stock":
+        where_parts.append("p.current_stock <= 0")
+    where_parts.append("p.is_active = 1")
+    where = "WHERE " + " AND ".join(where_parts)
+
+    products = db.execute(f"""
+        SELECT p.*, c.name as cat_name, u.short_name as unit_short
+        FROM products p
+        LEFT JOIN categories c ON c.id=p.category_id
+        LEFT JOIN units u ON u.id=p.unit_id
+        {where} ORDER BY p.sort_order, p.name
+    """, params).fetchall()
+
+    from datetime import datetime
+    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    return render_template("stock_print.html", products=products, now=now,
+                           filters={"category_id": category_id, "search": search, "show": show})
+
 if __name__ == "__main__":
     init_db()
     # Добавляем host='0.0.0.0'
