@@ -200,6 +200,27 @@ def init_db():
     if 'user_id' not in existing:
         db.execute("ALTER TABLE operations ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
         db.commit()
+    # Runtime migration: broaden CHECK constraint to include ADJUST type
+    # SQLite can't ALTER a constraint, so we recreate the table if needed
+    check_sql = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='operations'"
+    ).fetchone()
+    if check_sql and "'IN','OUT'" in check_sql[0] and 'ADJUST' not in check_sql[0]:
+        db.executescript("""
+            PRAGMA foreign_keys = OFF;
+            ALTER TABLE operations RENAME TO _operations_old;
+            CREATE TABLE operations (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                type       TEXT NOT NULL CHECK(type IN ('IN','OUT','ADJUST')),
+                created_at TEXT NOT NULL,
+                comment    TEXT,
+                user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL
+            );
+            INSERT INTO operations SELECT id, type, created_at, comment, user_id FROM _operations_old;
+            DROP TABLE _operations_old;
+            PRAGMA foreign_keys = ON;
+        """)
+        db.commit()
     # Runtime migration: add is_active to products for existing databases
     existing_p = [r[1] for r in db.execute("PRAGMA table_info(products)")]
     if 'is_active' not in existing_p:
