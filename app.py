@@ -1224,7 +1224,32 @@ def inventory_session(id):
 
         save_action = request.form.get("save_action", "save")
         if save_action == "complete":
-            return redirect(url_for('inventory_complete', id=id))
+            # Run completion logic inline (can't redirect to POST-only route)
+            items_to_apply = db.execute(
+                "SELECT * FROM inventory_items WHERE session_id=? AND actual_qty IS NOT NULL AND delta != 0",
+                (id,)
+            ).fetchall()
+            if items_to_apply:
+                now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+                cur = db.execute(
+                    "INSERT INTO operations (type, created_at, comment, user_id) VALUES ('ADJUST',?,?,?)",
+                    (now, f"Инвентаризация #{id}", current_user.id)
+                )
+                op_id = cur.lastrowid
+                for item in items_to_apply:
+                    db.execute(
+                        "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit) VALUES (?,?,?,?)",
+                        (op_id, item['product_id'], abs(item['delta']), item['price'] or 0)
+                    )
+                    db.execute(
+                        "UPDATE products SET current_stock = current_stock + ? WHERE id=?",
+                        (item['delta'], item['product_id'])
+                    )
+            now2 = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+            db.execute("UPDATE inventory_sessions SET status='completed', completed_at=? WHERE id=?", (now2, id))
+            db.commit()
+            flash(f"Инвентаризация завершена. Скорректировано позиций: {len(items_to_apply)}")
+            return redirect(url_for('inventory'))
 
         flash("Данные сохранены")
         return redirect(url_for('inventory_session', id=id))
