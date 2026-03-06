@@ -25,7 +25,7 @@ else:
     logger.warning("SECRET_KEY not set – using a random key (sessions will not persist across restarts)")
 
 csrf = CSRFProtect(app)
-DB_PATH = "warehouse.db"
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "warehouse.db")
 
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
