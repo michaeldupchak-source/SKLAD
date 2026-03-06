@@ -172,7 +172,8 @@ def init_db():
         operation_id INTEGER NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
         product_id INTEGER NOT NULL REFERENCES products(id),
         quantity REAL NOT NULL,
-        price_per_unit REAL
+        price_per_unit REAL,
+        reason TEXT
     );
     CREATE TABLE IF NOT EXISTS lots (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -211,6 +212,11 @@ def init_db():
         rows = db.execute("SELECT id FROM products ORDER BY name").fetchall()
         for i, (pid,) in enumerate(rows):
             db.execute("UPDATE products SET sort_order=? WHERE id=?", (i, pid))
+        db.commit()
+    # Runtime migration: add reason to operation_items
+    existing_oi = [r[1] for r in db.execute("PRAGMA table_info(operation_items)")]
+    if 'reason' not in existing_oi:
+        db.execute("ALTER TABLE operation_items ADD COLUMN reason TEXT")
         db.commit()
     # Runtime migration: create inventory tables for existing databases
     tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -1238,8 +1244,8 @@ def inventory_session(id):
                 op_id = cur.lastrowid
                 for item in items_to_apply:
                     db.execute(
-                        "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit) VALUES (?,?,?,?)",
-                        (op_id, item['product_id'], abs(item['delta']), item['price'] or 0)
+                        "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit, reason) VALUES (?,?,?,?,?)",
+                        (op_id, item['product_id'], abs(item['delta']), item['price'] or 0, item['reason'])
                     )
                     db.execute(
                         "UPDATE products SET current_stock = current_stock + ? WHERE id=?",

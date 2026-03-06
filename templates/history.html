@@ -181,28 +181,37 @@
         {{ op.comment }}
       </div>
       {% endif %}
+      {% set adjust_reasons = {'accounting': 'Ошибка учёта', 'writeoff': 'Списание', 'regrade': 'Пересортица', 'theft': 'Кража'} %}
       <table style="width:100%;border-collapse:collapse">
-        <thead>
-          <tr>
-            <th style="text-align:left;padding:7px 8px;font-size:0.62rem;font-family:var(--mono);color:var(--text-muted);border-bottom:1px solid var(--border);letter-spacing:1px">ТОВАР</th>
-            <th style="text-align:right;padding:7px 8px;font-size:0.62rem;font-family:var(--mono);color:var(--text-muted);border-bottom:1px solid var(--border)">КОЛ-ВО</th>
-            <th style="text-align:right;padding:7px 8px;font-size:0.62rem;font-family:var(--mono);color:var(--text-muted);border-bottom:1px solid var(--border)">ЦЕНА/ЕД.</th>
-            <th style="text-align:right;padding:7px 8px;font-size:0.62rem;font-family:var(--mono);color:var(--text-muted);border-bottom:1px solid var(--border)">СУММА</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for item in items %}
-          <tr>
-            <td style="padding:9px 8px;font-size:0.875rem;border-bottom:1px solid var(--border)">{{ item.product_name }}</td>
-            <td style="padding:9px 8px;text-align:right;font-family:var(--mono);font-size:0.8rem;border-bottom:1px solid var(--border)">
-              {{ "%.3g" | format(item.quantity) }}{% if item.unit_short %} {{ item.unit_short }}{% endif %}
+      <thead>
+      <tr>
+      <th style="text-align:left;padding:7px 8px;font-size:0.62rem;font-family:var(--mono);color:var(--text-muted);border-bottom:1px solid var(--border);letter-spacing:1px">ТОВАР</th>
+      <th style="text-align:right;padding:7px 8px;font-size:0.62rem;font-family:var(--mono);color:var(--text-muted);border-bottom:1px solid var(--border)">КОЛ-ВО</th>
+      <th style="text-align:right;padding:7px 8px;font-size:0.62rem;font-family:var(--mono);color:var(--text-muted);border-bottom:1px solid var(--border)">ЦЕНА/ЕД.</th>
+        <th style="text-align:right;padding:7px 8px;font-size:0.62rem;font-family:var(--mono);color:var(--text-muted);border-bottom:1px solid var(--border)">СУММА</th>
+          {% if op.type == 'ADJUST' %}
+          <th style="text-align:left;padding:7px 8px;font-size:0.62rem;font-family:var(--mono);color:var(--text-muted);border-bottom:1px solid var(--border)">ПРИЧИНА</th>
+        {% endif %}
+      </tr>
+      </thead>
+      <tbody>
+      {% for item in items %}
+      <tr>
+      <td style="padding:9px 8px;font-size:0.875rem;border-bottom:1px solid var(--border)">{{ item.product_name }}</td>
+      <td style="padding:9px 8px;text-align:right;font-family:var(--mono);font-size:0.8rem;border-bottom:1px solid var(--border)">
+        {{ "%.3g" | format(item.quantity) }}{% if item.unit_short %} {{ item.unit_short }}{% endif %}
+      </td>
+      <td style="padding:9px 8px;text-align:right;font-family:var(--mono);font-size:0.8rem;border-bottom:1px solid var(--border);color:var(--text-muted)">
+        {% if item.price_per_unit %}{{ "%.2f" | format(item.price_per_unit) }} ₽{% else %}—{% endif %}
+        </td>
+        <td style="padding:9px 8px;text-align:right;font-family:var(--mono);font-size:0.8rem;border-bottom:1px solid var(--border);color:var(--accent)">
+            {% if item.price_per_unit %}{{ "%.2f" | format(item.quantity * item.price_per_unit) }} ₽{% else %}—{% endif %}
             </td>
-            <td style="padding:9px 8px;text-align:right;font-family:var(--mono);font-size:0.8rem;border-bottom:1px solid var(--border);color:var(--text-muted)">
-              {% if item.price_per_unit %}{{ "%.2f" | format(item.price_per_unit) }} ₽{% else %}—{% endif %}
+            {% if op.type == 'ADJUST' %}
+            <td style="padding:9px 8px;font-size:0.78rem;border-bottom:1px solid var(--border);color:var(--text-muted)">
+              {{ adjust_reasons.get(item.reason, '—') if item.reason else '—' }}
             </td>
-            <td style="padding:9px 8px;text-align:right;font-family:var(--mono);font-size:0.8rem;border-bottom:1px solid var(--border);color:var(--accent)">
-              {% if item.price_per_unit %}{{ "%.2f" | format(item.quantity * item.price_per_unit) }} ₽{% else %}—{% endif %}
-            </td>
+            {% endif %}
           </tr>
           {% endfor %}
         </tbody>
