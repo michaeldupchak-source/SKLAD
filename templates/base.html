@@ -12,8 +12,20 @@
   // Fix #12: Apply theme immediately to prevent flash of dark theme on light mode
   (function() {
     // Fix #12: Apply theme before render to prevent flash
-    var theme = '{% if current_user.is_authenticated and current_user.theme == "light" %}light{% else %}dark{% endif %}';
+    var savedTheme = '{{ current_user.theme if current_user.is_authenticated else "system" }}';
+    var theme;
+    if (savedTheme === 'system') {
+      theme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    } else {
+      theme = savedTheme;
+    }
     document.documentElement.setAttribute('data-theme', theme);
+    // Live-update when system preference changes (only in system mode)
+    if (savedTheme === 'system') {
+      window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', function(e) {
+        document.documentElement.setAttribute('data-theme', e.matches ? 'light' : 'dark');
+      });
+    }
 
     // Fix sidebar flash: inject a no-transitions style immediately,
     // then remove it after two rAF cycles (after first real paint).

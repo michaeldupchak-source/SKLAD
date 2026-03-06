@@ -380,8 +380,8 @@ def settings():
             flash('Часовой пояс сохранён')
 
         elif action == 'theme':
-            theme = request.form.get('theme', 'dark')
-            if theme in ('dark', 'light'):
+            theme = request.form.get('theme', 'system')
+            if theme in ('dark', 'light', 'system'):
                 db.execute("UPDATE users SET theme=? WHERE id=?", (theme, current_user.id))
                 db.commit()
             flash('Тема сохранена')
