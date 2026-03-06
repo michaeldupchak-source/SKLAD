@@ -1,6 +1,8 @@
 import logging
 import os
 import re
+from dotenv import load_dotenv
+load_dotenv()
 import secrets
 import sqlite3
 import urllib.parse
