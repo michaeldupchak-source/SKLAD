@@ -1161,7 +1161,7 @@ def inventory_new():
         (current_user.id,)
     ).fetchone()
     if existing:
-        return redirect(url_for('inventory_session', id=existing['id']))
+        return redirect(url_for('inventory_session', inv_id=existing['id']))
     cur = db.execute(
         "INSERT INTO inventory_sessions (created_at, user_id, status) VALUES (?,?,'draft')",
         (now, current_user.id)
@@ -1185,7 +1185,7 @@ def inventory_new():
             (session_id, p['id'], p['current_stock'], price)
         )
     db.commit()
-    return redirect(url_for('inventory_session', id=session_id))
+    return redirect(url_for('inventory_session', inv_id=session_id))
 
 
 ADJUST_REASONS = [
@@ -1260,7 +1260,7 @@ def inventory_session(inv_id):
             return redirect(url_for('inventory'))
 
         flash("Данные сохранены")
-        return redirect(url_for('inventory_session', id=inv_id))
+        return redirect(url_for('inventory_session', inv_id=inv_id))
 
     items = db.execute("""
         SELECT ii.*, p.name as product_name, u.short_name as unit_short
