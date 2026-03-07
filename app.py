@@ -59,7 +59,7 @@ def get_db():
     return g.db
 
 @app.teardown_appcontext
-def close_db(e=None):
+def close_db(_e=None):
     db = g.pop("db", None)
     if db:
         db.close()
@@ -87,7 +87,7 @@ def calc_danger_thresholds(db, mode, weeks):
     weeks = max(1, int(weeks))
     if mode == 'recent':
         from datetime import datetime, timedelta
-        cutoff = (datetime.utcnow() - timedelta(weeks=weeks)).strftime('%Y-%m-%d %H:%M:%S')
+        cutoff = (datetime.now(timezone.utc) - timedelta(weeks=weeks)).strftime('%Y-%m-%d %H:%M:%S')
         rows = db.execute("""
             SELECT oi.product_id, COALESCE(SUM(oi.quantity), 0) as total_out
             FROM operation_items oi
@@ -303,7 +303,7 @@ def setup():
         elif not re.search(r'[!@#$%^&*()_+\-=\[\]{};\'\":,.<>?/\\|`~]', password):
             error = 'Пароль должен содержать хотя бы один специальный символ'
         else:
-            now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+            now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
             db.execute(
                 "INSERT INTO users (username, password_hash, role, theme, created_at) VALUES (?,?,?,?,?)",
                 (username, generate_password_hash(password), 'admin', 'dark', now)
@@ -394,7 +394,7 @@ def settings():
             role     = request.form.get('role', 'user')
             if username and password:
                 try:
-                    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+                    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
                     db.execute(
                         "INSERT INTO users (username, password_hash, role, theme, created_at) VALUES (?,?,?,?,?)",
                         (username, generate_password_hash(password), role, 'dark', now)
@@ -533,17 +533,17 @@ def create_category():
     return redirect(url_for("categories"))
 
 @app.route("/categories/<int:id>/update", methods=["POST"])
-def update_category(id):
+def update_category(cat_id):
     db = get_db()
     db.execute("UPDATE categories SET name=?, description=? WHERE id=?",
-               (request.form["name"], request.form.get("description") or None, id))
+               (request.form["name"], request.form.get("description") or None, cat_id))
     db.commit()
     return redirect(url_for("categories"))
 
 @app.route("/categories/<int:id>/delete", methods=["POST"])
-def delete_category(id):
+def delete_category(cat_id):
     db = get_db()
-    db.execute("DELETE FROM categories WHERE id=?", (id,))
+    db.execute("DELETE FROM categories WHERE id=?", (cat_id,))
     db.commit()
     return redirect(url_for("categories"))
 
@@ -563,17 +563,17 @@ def create_unit():
     return redirect(url_for("units"))
 
 @app.route("/units/<int:id>/update", methods=["POST"])
-def update_unit(id):
+def update_unit(unit_id):
     db = get_db()
     db.execute("UPDATE units SET name=?, short_name=? WHERE id=?",
-               (request.form["name"], request.form["short_name"], id))
+               (request.form["name"], request.form["short_name"], unit_id))
     db.commit()
     return redirect(url_for("units"))
 
 @app.route("/units/<int:id>/delete", methods=["POST"])
-def delete_unit(id):
+def delete_unit(unit_id):
     db = get_db()
-    db.execute("DELETE FROM units WHERE id=?", (id,))
+    db.execute("DELETE FROM units WHERE id=?", (unit_id,))
     db.commit()
     return redirect(url_for("units"))
 
@@ -620,27 +620,27 @@ def create_product():
     return redirect(url_for("products"))
 
 @app.route("/products/<int:id>/update", methods=["POST"])
-def update_product(id):
+def update_product(prod_id):
     db = get_db()
     db.execute("UPDATE products SET name=?, category_id=?, unit_id=?, description=? WHERE id=?",
                (request.form["name"],
                 request.form.get("category_id") or None,
                 request.form.get("unit_id") or None,
-                request.form.get("description") or None, id))
+                request.form.get("description") or None, prod_id))
     db.commit()
     return redirect(url_for("products"))
 
 @app.route("/products/<int:id>/delete", methods=["POST"])
-def delete_product(id):
+def delete_product(prod_id):
     db = get_db()
-    db.execute("DELETE FROM products WHERE id=?", (id,))
+    db.execute("DELETE FROM products WHERE id=?", (prod_id,))
     db.commit()
     return redirect(url_for("products"))
 
 @app.route("/products/<int:id>/toggle_active", methods=["POST"])
-def toggle_product_active(id):
+def toggle_product_active(prod_id):
     db = get_db()
-    db.execute("UPDATE products SET is_active = 1 - is_active WHERE id=?", (id,))
+    db.execute("UPDATE products SET is_active = 1 - is_active WHERE id=?", (prod_id,))
     db.commit()
     return redirect(request.referrer or url_for("products"))
 
@@ -675,10 +675,10 @@ def create_operation():
     if dt_str:
         try:
             created_at = datetime.strptime(dt_str, "%Y-%m-%dT%H:%M").strftime("%Y-%m-%d %H:%M:%S")
-        except Exception:
-            created_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            created_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     else:
-        created_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        created_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     product_ids = request.form.getlist("product_id[]")
     quantities  = request.form.getlist("quantity[]")
@@ -725,9 +725,9 @@ def create_operation():
 
 # ── Operations: edit / delete ──────────────────────────────
 @app.route("/operations/<int:id>/edit")
-def edit_operation(id):
+def edit_operation(op_id):
     db = get_db()
-    op = db.execute("SELECT * FROM operations WHERE id=?", (id,)).fetchone()
+    op = db.execute("SELECT * FROM operations WHERE id=?", (op_id,)).fetchone()
     if not op:
         return redirect(url_for("history"))
     items = db.execute("""
@@ -736,7 +736,7 @@ def edit_operation(id):
         JOIN products p ON p.id = oi.product_id
         LEFT JOIN units u ON u.id = p.unit_id
         WHERE oi.operation_id = ?
-    """, (id,)).fetchall()
+    """, (op_id,)).fetchall()
     prods     = db.execute("""
         SELECT p.*, u.short_name as unit_short FROM products p
         LEFT JOIN units u ON u.id = p.unit_id
@@ -747,12 +747,12 @@ def edit_operation(id):
                            products=prods, stock_map=stock_map)
 
 @app.route("/operations/<int:id>/update", methods=["POST"])
-def update_operation(id):
+def update_operation(op_id):
     db = get_db()
-    op = db.execute("SELECT * FROM operations WHERE id=?", (id,)).fetchone()
+    op = db.execute("SELECT * FROM operations WHERE id=?", (op_id,)).fetchone()
     if not op:
         return redirect(url_for("history"))
-    old_items = db.execute("SELECT * FROM operation_items WHERE operation_id=?", (id,)).fetchall()
+    old_items = db.execute("SELECT * FROM operation_items WHERE operation_id=?", (op_id,)).fetchall()
     for item in old_items:
         if op["type"] == "IN":
             fifo_remove_lot(db, item["id"])
@@ -762,19 +762,19 @@ def update_operation(id):
             fifo_restore(db, item["id"])
             db.execute("UPDATE products SET current_stock = current_stock + ? WHERE id=?",
                        (item["quantity"], item["product_id"]))
-    db.execute("DELETE FROM operation_items WHERE operation_id=?", (id,))
+    db.execute("DELETE FROM operation_items WHERE operation_id=?", (op_id,))
     op_type = request.form.get("type", op["type"])
     comment = request.form.get("comment") or None
     dt_str  = request.form.get("created_at", "")
     if dt_str:
         try:
             created_at = datetime.strptime(dt_str, "%Y-%m-%dT%H:%M").strftime("%Y-%m-%d %H:%M:%S")
-        except Exception:
+        except (ValueError, TypeError):
             created_at = op["created_at"]
     else:
         created_at = op["created_at"]
     db.execute("UPDATE operations SET type=?, created_at=?, comment=? WHERE id=?",
-               (op_type, created_at, comment, id))
+               (op_type, created_at, comment, op_id))
     product_ids = request.form.getlist("product_id[]")
     quantities  = request.form.getlist("quantity[]")
     prices      = request.form.getlist("price_per_unit[]")
@@ -788,7 +788,7 @@ def update_operation(id):
         if op_type == "OUT":
             item_cur  = db.execute(
                 "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit) VALUES (?,?,?,NULL)",
-                (id, int(pid), qty))
+                (op_id, int(pid), qty))
             item_id   = item_cur.lastrowid
             fifo_price = fifo_consume(db, int(pid), qty, item_id)
             if fifo_price is not None:
@@ -797,7 +797,7 @@ def update_operation(id):
         else:
             item_cur = db.execute(
                 "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit) VALUES (?,?,?,?)",
-                (id, int(pid), qty, price))
+                (op_id, int(pid), qty, price))
             item_id  = item_cur.lastrowid
             fifo_add_lot(db, int(pid), item_id, price, qty, created_at)
         if op_type == "IN":
@@ -808,12 +808,12 @@ def update_operation(id):
     return redirect(url_for("history"))
 
 @app.route("/operations/<int:id>/delete", methods=["POST"])
-def delete_operation(id):
+def delete_operation(op_id):
     db = get_db()
-    op = db.execute("SELECT * FROM operations WHERE id=?", (id,)).fetchone()
+    op = db.execute("SELECT * FROM operations WHERE id=?", (op_id,)).fetchone()
     if not op:
         return redirect(url_for("history"))
-    for item in db.execute("SELECT * FROM operation_items WHERE operation_id=?", (id,)).fetchall():
+    for item in db.execute("SELECT * FROM operation_items WHERE operation_id=?", (op_id,)).fetchall():
         if op["type"] == "IN":
             fifo_remove_lot(db, item["id"])
             db.execute("UPDATE products SET current_stock = current_stock - ? WHERE id=?",
@@ -822,7 +822,7 @@ def delete_operation(id):
             fifo_restore(db, item["id"])
             db.execute("UPDATE products SET current_stock = current_stock + ? WHERE id=?",
                        (item["quantity"], item["product_id"]))
-    db.execute("DELETE FROM operations WHERE id=?", (id,))
+    db.execute("DELETE FROM operations WHERE id=?", (op_id,))
     db.commit()
     return redirect(url_for("history"))
 
@@ -837,7 +837,7 @@ def stats_detail():
     date_to     = request.args.get("date_to", "")
     preset      = request.args.get("preset", "")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if preset == "today":
         date_from = now.strftime("%Y-%m-%d")
         date_to = now.strftime("%Y-%m-%d")
@@ -997,7 +997,7 @@ def stats():
     date_to   = request.args.get("date_to", "")
     preset    = request.args.get("preset", "")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if preset == "today":
         date_from = now.strftime("%Y-%m-%d")
         date_to = now.strftime("%Y-%m-%d")
@@ -1062,7 +1062,7 @@ def stock():
     where_parts.append("p.is_active = 1")
     where = "WHERE " + " AND ".join(where_parts)
 
-    products = db.execute(f"""
+    stock_rows = db.execute(f"""
         SELECT p.*, c.name as cat_name, u.short_name as unit_short,
             (SELECT oi.price_per_unit FROM operation_items oi
              JOIN operations o ON o.id=oi.operation_id
@@ -1083,20 +1083,20 @@ def stock():
         {where} ORDER BY p.sort_order, p.name
     """, params).fetchall()
 
-    categories       = db.execute("SELECT * FROM categories ORDER BY name").fetchall()
-    in_stock_count   = sum(1 for p in products if p["current_stock"] > 0)
-    out_stock_count  = sum(1 for p in products if p["current_stock"] <= 0)
+    cat_rows         = db.execute("SELECT * FROM categories ORDER BY name").fetchall()
+    in_stock_count   = sum(1 for p in stock_rows if p["current_stock"] > 0)
+    out_stock_count  = sum(1 for p in stock_rows if p["current_stock"] <= 0)
     total_stock_value = sum(
         p["current_stock"] * p["last_price"]
-        for p in products if p["current_stock"] > 0 and p["last_price"]
+        for p in stock_rows if p["current_stock"] > 0 and p["last_price"]
     )
     danger_mode  = get_setting('danger_stock_mode',  'recent')
     danger_weeks = get_setting('danger_stock_weeks', '2')
     danger_thresholds = calc_danger_thresholds(db, danger_mode, danger_weeks)
 
     return render_template("stock.html",
-        products=products, categories=categories,
-        total_items=len(products),
+        products=stock_rows, categories=cat_rows,
+        total_items=len(stock_rows),
         in_stock_count=in_stock_count,
         out_of_stock_count=out_stock_count,
         total_stock_value=total_stock_value,
@@ -1123,7 +1123,7 @@ def stock_print():
     where_parts.append("p.is_active = 1")
     where = "WHERE " + " AND ".join(where_parts)
 
-    products = db.execute(f"""
+    stock_rows = db.execute(f"""
         SELECT p.*, c.name as cat_name, u.short_name as unit_short
         FROM products p
         LEFT JOIN categories c ON c.id=p.category_id
@@ -1133,7 +1133,7 @@ def stock_print():
 
     from datetime import datetime
     now = datetime.now().strftime("%d.%m.%Y %H:%M")
-    return render_template("stock_print.html", products=products, now=now,
+    return render_template("stock_print.html", products=stock_rows, now=now,
                            filters={"category_id": category_id, "search": search, "show": show})
 
 
@@ -1154,7 +1154,7 @@ def inventory():
 @app.route("/inventory/new", methods=["POST"])
 def inventory_new():
     db  = get_db()
-    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
     # Only one draft per user allowed
     existing = db.execute(
         "SELECT id FROM inventory_sessions WHERE status='draft' AND user_id=?",
@@ -1168,10 +1168,10 @@ def inventory_new():
     )
     session_id = cur.lastrowid
     # Snapshot current stock for all active products
-    products = db.execute(
+    active_products = db.execute(
         "SELECT id, current_stock FROM products WHERE is_active=1 ORDER BY sort_order, name"
     ).fetchall()
-    for p in products:
+    for p in active_products:
         # Last IN price for financial evaluation
         price_row = db.execute("""
             SELECT oi.price_per_unit FROM operation_items oi
@@ -1196,15 +1196,15 @@ ADJUST_REASONS = [
 ]
 
 @app.route("/inventory/<int:id>", methods=["GET", "POST"])
-def inventory_session(id):
+def inventory_session(inv_id):
     db = get_db()
-    session = db.execute("SELECT * FROM inventory_sessions WHERE id=?", (id,)).fetchone()
+    session = db.execute("SELECT * FROM inventory_sessions WHERE id=?", (inv_id,)).fetchone()
     if not session:
         return "Сессия не найдена", 404
 
     if request.method == "POST" and session['status'] == 'draft':
         items_db = db.execute(
-            "SELECT * FROM inventory_items WHERE session_id=?", (id,)
+            "SELECT * FROM inventory_items WHERE session_id=?", (inv_id,)
         ).fetchall()
         for item in items_db:
             actual_raw = request.form.get(f"actual_{item['id']}", "").strip()
@@ -1235,13 +1235,13 @@ def inventory_session(id):
             # Run completion logic inline (can't redirect to POST-only route)
             items_to_apply = db.execute(
                 "SELECT * FROM inventory_items WHERE session_id=? AND actual_qty IS NOT NULL AND delta != 0",
-                (id,)
+                (inv_id,)
             ).fetchall()
             if items_to_apply:
-                now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+                now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
                 cur = db.execute(
                     "INSERT INTO operations (type, created_at, comment, user_id) VALUES ('ADJUST',?,?,?)",
-                    (now, f"Инвентаризация #{id}", current_user.id)
+                    (now, f"Инвентаризация #{inv_id}", current_user.id)
                 )
                 op_id = cur.lastrowid
                 for item in items_to_apply:
@@ -1253,14 +1253,14 @@ def inventory_session(id):
                         "UPDATE products SET current_stock = current_stock + ? WHERE id=?",
                         (item['delta'], item['product_id'])
                     )
-            now2 = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-            db.execute("UPDATE inventory_sessions SET status='completed', completed_at=? WHERE id=?", (now2, id))
+            now2 = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+            db.execute("UPDATE inventory_sessions SET status='completed', completed_at=? WHERE id=?", (now2, inv_id))
             db.commit()
             flash(f"Инвентаризация завершена. Скорректировано позиций: {len(items_to_apply)}")
             return redirect(url_for('inventory'))
 
         flash("Данные сохранены")
-        return redirect(url_for('inventory_session', id=id))
+        return redirect(url_for('inventory_session', id=inv_id))
 
     items = db.execute("""
         SELECT ii.*, p.name as product_name, u.short_name as unit_short
@@ -1269,29 +1269,29 @@ def inventory_session(id):
         LEFT JOIN units u ON u.id = p.unit_id
         WHERE ii.session_id = ?
         ORDER BY p.sort_order, p.name
-    """, (id,)).fetchall()
+    """, (inv_id,)).fetchall()
     return render_template("inventory_session.html",
                            session=session, items=items, reasons=ADJUST_REASONS)
 
 
 @app.route("/inventory/<int:id>/complete", methods=["POST"])
-def inventory_complete(id):
+def inventory_complete(inv_id):
     db = get_db()
-    session = db.execute("SELECT * FROM inventory_sessions WHERE id=?", (id,)).fetchone()
+    session = db.execute("SELECT * FROM inventory_sessions WHERE id=?", (inv_id,)).fetchone()
     if not session or session['status'] != 'draft':
         return redirect(url_for('inventory'))
 
     items = db.execute(
         "SELECT * FROM inventory_items WHERE session_id=? AND actual_qty IS NOT NULL AND delta != 0",
-        (id,)
+        (inv_id,)
     ).fetchall()
 
     if items:
-        now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
         # One ADJUST operation per session
         cur = db.execute(
             "INSERT INTO operations (type, created_at, comment, user_id) VALUES ('ADJUST',?,?,?)",
-            (now, f"Инвентаризация #{id}", current_user.id)
+            (now, f"Инвентаризация #{inv_id}", current_user.id)
         )
         op_id = cur.lastrowid
 
@@ -1308,10 +1308,10 @@ def inventory_complete(id):
                 (delta, item['product_id'])
             )
 
-    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
     db.execute(
         "UPDATE inventory_sessions SET status='completed', completed_at=? WHERE id=?",
-        (now, id)
+        (now, inv_id)
     )
     db.commit()
     flash(f"Инвентаризация завершена. Скорректировано позиций: {len(items)}")
@@ -1319,9 +1319,9 @@ def inventory_complete(id):
 
 
 @app.route("/inventory/<int:id>/delete", methods=["POST"])
-def inventory_delete(id):
+def inventory_delete(inv_id):
     db = get_db()
-    db.execute("DELETE FROM inventory_sessions WHERE id=? AND status='draft'", (id,))
+    db.execute("DELETE FROM inventory_sessions WHERE id=? AND status='draft'", (inv_id,))
     db.commit()
     return redirect(url_for('inventory'))
 
