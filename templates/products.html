@@ -182,14 +182,14 @@ tr.archived-row { opacity:0.55; }
                 Изменить
               </button>
               {% endif %}
-              <form method="post" action="{{ url_for('toggle_product_active', id=p.id) }}" style="margin:0">
+              <form method="post" action="{{ url_for('toggle_product_active', prod_id=p.id) }}" style="margin:0">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-sm {% if p.is_active %}btn-ghost{% else %}btn-green{% endif %}"
                   title="{% if p.is_active %}Архивировать{% else %}Восстановить{% endif %}">
                   {% if p.is_active %}Архивировать{% else %}Восстановить{% endif %}
                 </button>
               </form>
-              <form method="post" action="{{ url_for('delete_product', id=p.id) }}" style="margin:0"
+              <form method="post" action="{{ url_for('delete_product', prod_id=p.id) }}" style="margin:0"
                 onsubmit="return confirm('Удалить товар «{{ p.name }}»? Это действие нельзя отменить.')">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-danger btn-sm">✕</button>

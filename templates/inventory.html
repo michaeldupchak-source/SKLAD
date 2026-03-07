@@ -68,11 +68,11 @@
           <td class="text-muted text-sm">{{ s.username or '—' }}</td>
           <td style="text-align:right">
             <div class="flex gap-8 justify-end">
-              <a href="{{ url_for('inventory_session', id=s.id) }}" class="btn btn-ghost btn-sm">
+              <a href="{{ url_for('inventory_session', inv_id=s.id) }}" class="btn btn-ghost btn-sm">
                 {% if s.status == 'draft' %}Заполнить{% else %}Просмотр{% endif %}
               </a>
               {% if s.status == 'draft' %}
-              <form method="post" action="{{ url_for('inventory_delete', id=s.id) }}" style="margin:0"
+              <form method="post" action="{{ url_for('inventory_delete', inv_id=s.id) }}" style="margin:0"
                 onsubmit="return confirm('Удалить черновик инвентаризации #{{ s.id }}?')">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-danger btn-sm">✕</button>

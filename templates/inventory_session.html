@@ -84,7 +84,7 @@
     {% endif %}
   </div>
   <div class="table-wrap">
-    <form method="post" action="{{ url_for('inventory_session', id=session.id) }}" id="main-form">
+    <form method="post" action="{{ url_for('inventory_session', inv_id=session.id) }}" id="main-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <table>
         <thead>
