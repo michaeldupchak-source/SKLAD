@@ -532,7 +532,7 @@ def create_category():
     db.commit()
     return redirect(url_for("categories"))
 
-@app.route("/categories/<int:id>/update", methods=["POST"])
+@app.route("/categories/<int:cat_id>/update", methods=["POST"])
 def update_category(cat_id):
     db = get_db()
     db.execute("UPDATE categories SET name=?, description=? WHERE id=?",
@@ -540,7 +540,7 @@ def update_category(cat_id):
     db.commit()
     return redirect(url_for("categories"))
 
-@app.route("/categories/<int:id>/delete", methods=["POST"])
+@app.route("/categories/<int:cat_id>/delete", methods=["POST"])
 def delete_category(cat_id):
     db = get_db()
     db.execute("DELETE FROM categories WHERE id=?", (cat_id,))
@@ -562,7 +562,7 @@ def create_unit():
     db.commit()
     return redirect(url_for("units"))
 
-@app.route("/units/<int:id>/update", methods=["POST"])
+@app.route("/units/<int:unit_id>/update", methods=["POST"])
 def update_unit(unit_id):
     db = get_db()
     db.execute("UPDATE units SET name=?, short_name=? WHERE id=?",
@@ -570,7 +570,7 @@ def update_unit(unit_id):
     db.commit()
     return redirect(url_for("units"))
 
-@app.route("/units/<int:id>/delete", methods=["POST"])
+@app.route("/units/<int:unit_id>/delete", methods=["POST"])
 def delete_unit(unit_id):
     db = get_db()
     db.execute("DELETE FROM units WHERE id=?", (unit_id,))
@@ -619,7 +619,7 @@ def create_product():
     db.commit()
     return redirect(url_for("products"))
 
-@app.route("/products/<int:id>/update", methods=["POST"])
+@app.route("/products/<int:prod_id>/update", methods=["POST"])
 def update_product(prod_id):
     db = get_db()
     db.execute("UPDATE products SET name=?, category_id=?, unit_id=?, description=? WHERE id=?",
@@ -630,14 +630,14 @@ def update_product(prod_id):
     db.commit()
     return redirect(url_for("products"))
 
-@app.route("/products/<int:id>/delete", methods=["POST"])
+@app.route("/products/<int:prod_id>/delete", methods=["POST"])
 def delete_product(prod_id):
     db = get_db()
     db.execute("DELETE FROM products WHERE id=?", (prod_id,))
     db.commit()
     return redirect(url_for("products"))
 
-@app.route("/products/<int:id>/toggle_active", methods=["POST"])
+@app.route("/products/<int:prod_id>/toggle_active", methods=["POST"])
 def toggle_product_active(prod_id):
     db = get_db()
     db.execute("UPDATE products SET is_active = 1 - is_active WHERE id=?", (prod_id,))
@@ -724,7 +724,7 @@ def create_operation():
 
 
 # ── Operations: edit / delete ──────────────────────────────
-@app.route("/operations/<int:id>/edit")
+@app.route("/operations/<int:op_id>/edit")
 def edit_operation(op_id):
     db = get_db()
     op = db.execute("SELECT * FROM operations WHERE id=?", (op_id,)).fetchone()
@@ -746,7 +746,7 @@ def edit_operation(op_id):
     return render_template("operation_edit.html", op=op, items=items,
                            products=prods, stock_map=stock_map)
 
-@app.route("/operations/<int:id>/update", methods=["POST"])
+@app.route("/operations/<int:op_id>/update", methods=["POST"])
 def update_operation(op_id):
     db = get_db()
     op = db.execute("SELECT * FROM operations WHERE id=?", (op_id,)).fetchone()
@@ -807,7 +807,7 @@ def update_operation(op_id):
     db.commit()
     return redirect(url_for("history"))
 
-@app.route("/operations/<int:id>/delete", methods=["POST"])
+@app.route("/operations/<int:op_id>/delete", methods=["POST"])
 def delete_operation(op_id):
     db = get_db()
     op = db.execute("SELECT * FROM operations WHERE id=?", (op_id,)).fetchone()
@@ -1195,7 +1195,7 @@ ADJUST_REASONS = [
     ('theft',      'Кража'),
 ]
 
-@app.route("/inventory/<int:id>", methods=["GET", "POST"])
+@app.route("/inventory/<int:inv_id>", methods=["GET", "POST"])
 def inventory_session(inv_id):
     db = get_db()
     session = db.execute("SELECT * FROM inventory_sessions WHERE id=?", (inv_id,)).fetchone()
@@ -1274,7 +1274,7 @@ def inventory_session(inv_id):
                            session=session, items=items, reasons=ADJUST_REASONS)
 
 
-@app.route("/inventory/<int:id>/complete", methods=["POST"])
+@app.route("/inventory/<int:inv_id>/complete", methods=["POST"])
 def inventory_complete(inv_id):
     db = get_db()
     session = db.execute("SELECT * FROM inventory_sessions WHERE id=?", (inv_id,)).fetchone()
@@ -1318,7 +1318,7 @@ def inventory_complete(inv_id):
     return redirect(url_for('inventory'))
 
 
-@app.route("/inventory/<int:id>/delete", methods=["POST"])
+@app.route("/inventory/<int:inv_id>/delete", methods=["POST"])
 def inventory_delete(inv_id):
     db = get_db()
     db.execute("DELETE FROM inventory_sessions WHERE id=? AND status='draft'", (inv_id,))
