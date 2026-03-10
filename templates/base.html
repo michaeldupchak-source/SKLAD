@@ -120,7 +120,7 @@ body {
   align-items: center;
   gap: 8px;
   overflow: hidden;
-  white-space: nowrap;
+  min-width: 0;
 }
 .logo-icon {
   width: 34px; height: 34px;
@@ -134,6 +134,7 @@ body {
 }
 .logo-text {
   overflow: hidden;
+  min-width: 0;
   transition: opacity 0.15s, width 0.22s;
 }
 .logo-text .wms {
@@ -142,11 +143,22 @@ body {
   font-weight: 700;
   color: var(--text);
   letter-spacing: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 155px;
+  /* Scale down font for longer names via JS-added class */
 }
+.logo-text .wms.wms-md { font-size: 0.78rem; letter-spacing: 1px; }
+.logo-text .wms.wms-sm { font-size: 0.64rem; letter-spacing: 0.5px; }
 .logo-text .sub {
   font-size: 0.65rem;
   color: var(--text-muted);
   letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 155px;
 }
 .sidebar.collapsed .logo-text { opacity: 0; width: 0; }
 
@@ -695,6 +707,23 @@ document.addEventListener('alpine:init', function() {
 });
 
 window.wmsConfirm = function(opts) { return Alpine.store('wmsConfirm').show(opts); };
+
+// Scale sidebar org name based on character length
+(function() {
+  function scaleLogo() {
+    var el = document.querySelector('.logo-text .wms');
+    if (!el) return;
+    var len = el.textContent.trim().length;
+    el.classList.remove('wms-md', 'wms-sm');
+    if (len > 18) el.classList.add('wms-sm');
+    else if (len > 11) el.classList.add('wms-md');
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', scaleLogo);
+  } else {
+    scaleLogo();
+  }
+})();
 
 // Intercept forms with data-confirm-message attribute
 document.addEventListener('submit', function(e) {
