@@ -40,7 +40,7 @@
       class="btn btn-ghost btn-sm">💾 Сохранить черновик</button>
     <button type="submit" form="main-form" name="save_action" value="complete"
       class="btn btn-primary btn-sm"
-      onclick="return confirmComplete(event)">✓ Завершить инвентаризацию</button>
+      id="btn-complete-inv">✓ Завершить инвентаризацию</button>
   </div>
   {% endif %}
 </div>
@@ -247,19 +247,31 @@ document.getElementById('show-only-discrepancies').addEventListener('change', fu
   }, this);
 });
 
-// Confirm complete
-function confirmComplete(e) {
+// Confirm complete — uses global WMS dialog instead of browser confirm()
+document.getElementById('btn-complete-inv').addEventListener('click', function(e) {
+  e.preventDefault();
   var discCount = document.querySelectorAll('.inv-row.has-disc').length;
-  // Save form data first via hidden form
-  var msg = 'Завершить инвентаризацию?\n\n';
-  if (discCount > 0) {
-    msg += 'Будет создана корректирующая операция для ' + discCount + ' позиций.\n';
-    msg += 'Остатки изменятся необратимо.';
-  } else {
-    msg += 'Расхождений не обнаружено. Остатки останутся без изменений.';
-  }
-  return confirm(msg);
-}
+  var msg = discCount > 0
+    ? 'Будет создана корректирующая операция для ' + discCount + ' позиций.\nОстатки изменятся необратимо.'
+    : 'Расхождений не обнаружено. Остатки останутся без изменений.';
+  var btn = this;
+  wmsConfirm({
+    title:   'Завершить инвентаризацию?',
+    message: msg,
+    type:    discCount > 0 ? 'warning' : 'info',
+    okText:  'Завершить',
+  }).then(function(ok) {
+    if (ok) {
+      btn.form.querySelector('[name=save_action][value=complete]') || (function(){
+        var h = document.createElement('input');
+        h.type='hidden'; h.name='save_action'; h.value='complete';
+        btn.form.appendChild(h);
+      })();
+      btn.form._wmsOk = true;
+      btn.form.submit();
+    }
+  });
+});
 </script>
 {% endif %}
 {% endblock %}

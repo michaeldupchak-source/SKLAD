@@ -190,7 +190,10 @@ tr.archived-row { opacity:0.55; }
                 </button>
               </form>
               <form method="post" action="{{ url_for('delete_product', prod_id=p.id) }}" style="margin:0"
-                onsubmit="return confirm('Удалить товар «{{ p.name }}»? Это действие нельзя отменить.')">
+                data-confirm-message="Удалить товар «{{ p.name }}»? Это действие нельзя отменить."
+                data-confirm-title="Удалить товар?"
+                data-confirm-type="danger"
+                data-confirm-ok="Удалить">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-danger btn-sm">✕</button>
               </form>

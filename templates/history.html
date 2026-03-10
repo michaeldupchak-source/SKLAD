@@ -124,11 +124,17 @@
           <td @click.stop style="text-align:right">
             <div class="flex gap-8 justify-end">
               <a href="/operations/{{ op.id }}/edit" class="btn btn-ghost btn-sm"
-                onclick="return confirm('⚠️ Редактирование операции изменит остатки на складе.\n\nДействуйте внимательно — старые данные будут пересчитаны.\n\nПродолжить?')">
+                data-confirm-message="Редактирование операции изменит остатки на складе. Старые данные будут пересчитаны. Продолжить?"
+                data-confirm-title="Редактирование операции"
+                data-confirm-type="warning"
+                data-confirm-ok="Продолжить">
                 Изменить
               </a>
               <form method="post" action="/operations/{{ op.id }}/delete" style="margin:0"
-                onsubmit="return confirm('⚠️ Удаление операции #{{ op.id }} необратимо!\n\nОстатки товаров будут скорректированы в обратную сторону.\n\nВы уверены?')">
+                data-confirm-message="Удаление операции #{{ op.id }} необратимо. Остатки товаров будут скорректированы в обратную сторону."
+                data-confirm-title="Удалить операцию?"
+                data-confirm-type="danger"
+                data-confirm-ok="Удалить">
                 <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
               </form>
             </div>

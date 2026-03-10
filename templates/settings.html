@@ -187,7 +187,7 @@
           <td class="td-mono text-muted" style="font-size:0.75rem">{{ u.created_at[:10].replace('-','.') }}</td>
           <td>
             {% if u.id != current_user.id %}
-            <form method="post" onsubmit="return confirm('Удалить пользователя {{ u.username }}?')">
+            <form method="post" data-confirm-message="Удалить пользователя {{ u.username }}? Это действие нельзя отменить." data-confirm-title="Удалить пользователя?" data-confirm-type="danger" data-confirm-ok="Удалить">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="action" value="delete_user">
               <input type="hidden" name="user_id" value="{{ u.id }}">

@@ -73,7 +73,10 @@
               </a>
               {% if s.status == 'draft' %}
               <form method="post" action="{{ url_for('inventory_delete', inv_id=s.id) }}" style="margin:0"
-                onsubmit="return confirm('Удалить черновик инвентаризации #{{ s.id }}?')">
+                data-confirm-message="Удалить черновик инвентаризации #{{ s.id }}? Все введённые данные будут потеряны."
+                data-confirm-title="Удалить черновик?"
+                data-confirm-type="danger"
+                data-confirm-ok="Удалить">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-danger btn-sm">✕</button>
               </form>

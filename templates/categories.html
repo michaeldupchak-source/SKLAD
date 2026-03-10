@@ -74,7 +74,10 @@
                 Изменить
               </button>
               <form method="post" action="{{ url_for('delete_category', cat_id=cat.id) }}" style="margin:0"
-                onsubmit="return confirm('Удалить категорию «{{ cat.name }}»?')">
+                data-confirm-message="Удалить категорию «{{ cat.name }}»?"
+                data-confirm-title="Удалить категорию?"
+                data-confirm-type="danger"
+                data-confirm-ok="Удалить">
                 <button type="submit" class="btn btn-danger btn-sm">✕</button>
               </form>
             </div>
