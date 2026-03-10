@@ -1,0 +1,255 @@
+/* ═══════════════════════════════════════════════════════════
+   SKLAD — mobile.css  (task #01 — PWA / Mobile Adaptive)
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Bottom Navigation ────────────────────────────────── */
+.mobile-nav {
+  display: none;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 1000;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 0 4px env(safe-area-inset-bottom, 8px);
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.4);
+}
+.mobile-nav__list {
+  display: flex;
+  align-items: stretch;
+  list-style: none;
+}
+.mobile-nav__item { flex: 1; }
+.mobile-nav__link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 4px;
+  min-height: 56px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 8px;
+  margin: 4px 2px;
+  transition: color 0.15s, background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.mobile-nav__link:hover,
+.mobile-nav__link.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+.mobile-nav__icon { font-size: 1.2rem; line-height: 1; }
+
+/* ── FAB ───────────────────────────────────────────────── */
+.mobile-fab {
+  display: none;
+  position: fixed;
+  right: 20px;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  z-index: 1010;
+  width: 52px; height: 52px;
+  background: var(--accent);
+  color: #0d0f12;
+  border: none;
+  border-radius: 50%;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(232,196,74,0.4);
+  transition: transform 0.15s, box-shadow 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  align-items: center;
+  justify-content: center;
+}
+.mobile-fab:active {
+  transform: scale(0.92);
+  box-shadow: 0 2px 10px rgba(232,196,74,0.3);
+}
+
+/* ── Sidebar Overlay ──────────────────────────────────── */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.sidebar-overlay.visible { opacity: 1; }
+
+/* ── Install Banner ───────────────────────────────────── */
+.install-banner {
+  display: none;
+  position: fixed;
+  bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+  left: 12px; right: 12px;
+  z-index: 1020;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  padding: 14px 16px;
+  gap: 12px;
+  align-items: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  animation: mobileSlideUp 0.3s ease;
+}
+.install-banner.show { display: flex; }
+.install-banner__icon { font-size: 1.5rem; flex-shrink: 0; }
+.install-banner__text { flex: 1; font-size: 0.78rem; color: var(--text); line-height: 1.4; }
+.install-banner__text strong {
+  display: block;
+  font-family: var(--mono);
+  color: var(--accent);
+  font-size: 0.72rem;
+  margin-bottom: 2px;
+}
+.install-banner__btn {
+  padding: 8px 16px;
+  background: var(--accent);
+  color: #0d0f12;
+  border: none; border-radius: 6px;
+  font-family: var(--mono); font-size: 0.7rem; font-weight: 700;
+  cursor: pointer; white-space: nowrap; flex-shrink: 0;
+}
+.install-banner__close {
+  background: none; border: none;
+  color: var(--text-muted); font-size: 1.1rem;
+  cursor: pointer; padding: 4px; flex-shrink: 0;
+}
+
+@keyframes mobileSlideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ══════════════════════════════════════════════════════════
+   BREAKPOINT ≤ 768px
+   ══════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* Показываем мобильные элементы */
+  .mobile-nav { display: block; }
+  .mobile-fab { display: flex; }
+
+  /* Скрываем desktop sidebar и его сдвиг main */
+  .sidebar { display: none !important; }
+  .main   { margin-left: 0 !important; transition: none !important; }
+
+  /* Паддинг под bottom nav */
+  .content {
+    padding: 16px 14px calc(72px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* Topbar */
+  .topbar {
+    padding: 0 14px !important;
+    height: 52px;
+  }
+
+  /* Скрываем breadcrumb, оставляем кнопки справа */
+  .breadcrumb { display: none; }
+
+  /* Кнопки — минимум 44px */
+  .btn { min-height: 44px; }
+  .btn-sm { min-height: 36px; }
+
+  /* Поля форм — 16px предотвращает зум на iOS */
+  input, select, textarea { font-size: 16px !important; }
+
+  /* Таблицы — горизонтальный скролл */
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Stat grid — 2 колонки */
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px;
+  }
+
+  /* Filters bar — wrap */
+  .filters-bar {
+    gap: 8px;
+    padding: 12px;
+  }
+  .filters-bar input,
+  .filters-bar select {
+    min-width: 0 !important;
+    width: 100%;
+  }
+
+  /* Grid → одна колонка */
+  .grid-2 { grid-template-columns: 1fr !important; }
+
+  /* Модальное окно — sheet снизу */
+  .modal-overlay { align-items: flex-end !important; padding: 0 !important; }
+  .modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+  }
+  .modal::before {
+    content: '';
+    display: block;
+    width: 36px; height: 4px;
+    background: var(--border2);
+    border-radius: 2px;
+    margin: 8px auto 14px;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   BREAKPOINT ≤ 480px
+   ══════════════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+  .content { padding: 12px 10px calc(72px + env(safe-area-inset-bottom, 0px)) !important; }
+
+  .stat-grid { grid-template-columns: 1fr !important; }
+
+  th, td { padding: 8px 10px; }
+
+  /* Card-вид таблиц */
+  table.table-cards thead { display: none; }
+  table.table-cards tbody tr {
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+  }
+  table.table-cards tbody td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    border: none;
+    font-size: 0.82rem;
+  }
+  table.table-cards tbody td::before {
+    content: attr(data-label);
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    flex-shrink: 0;
+    margin-right: 12px;
+  }
+}
+
+/* ── Safe Area (notch / Dynamic Island) ────────────────── */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .topbar { padding-top: max(0px, env(safe-area-inset-top)); }
+}

@@ -2,7 +2,16 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<!-- PWA -->
+<meta name="theme-color" content="#e8c44a"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="SKLAD"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}"/>
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-180.png') }}"/>
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/icon-32.png') }}"/>
 <meta name="csrf-token" content="{{ csrf_token() }}"/>
 <title>{% block title %}Склад{% endblock %} — WMS</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -622,6 +631,7 @@ html.sidebar-pre-collapsed .sidebar * {
 html.sidebar-pre-collapsed .sidebar { width: 56px !important; }
 html.sidebar-pre-collapsed .main { margin-left: 56px !important; }
 </style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/mobile.css') }}"/>
 {% block extra_head %}{% endblock %}
 
 <!-- ── Global confirm dialog ─────────────────────────────── -->
@@ -883,6 +893,59 @@ document.addEventListener('click', function(e) {
     </div>
   </div>
 </div>
+
+<!-- ── Mobile Bottom Navigation ─────────────────────────── -->
+<nav class="mobile-nav" aria-label="Мобильная навигация">
+  <ul class="mobile-nav__list">
+    <li class="mobile-nav__item">
+      <a href="{{ url_for('stock') }}" class="mobile-nav__link">
+        <span class="mobile-nav__icon">◧</span>
+        <span>Наличие</span>
+      </a>
+    </li>
+    <li class="mobile-nav__item">
+      <a href="{{ url_for('new_operation') }}" class="mobile-nav__link">
+        <span class="mobile-nav__icon">+</span>
+        <span>Операция</span>
+      </a>
+    </li>
+    <li class="mobile-nav__item">
+      <a href="{{ url_for('history') }}" class="mobile-nav__link">
+        <span class="mobile-nav__icon">≡</span>
+        <span>История</span>
+      </a>
+    </li>
+    <li class="mobile-nav__item">
+      <a href="{{ url_for('products') }}" class="mobile-nav__link">
+        <span class="mobile-nav__icon">▣</span>
+        <span>Товары</span>
+      </a>
+    </li>
+    <li class="mobile-nav__item">
+      <a href="{{ url_for('settings') }}" class="mobile-nav__link">
+        <span class="mobile-nav__icon">⚙</span>
+        <span>Настройки</span>
+      </a>
+    </li>
+  </ul>
+</nav>
+
+<!-- ── Install Banner ─────────────────────────────────────── -->
+<div class="install-banner" id="install-banner">
+  <span class="install-banner__icon">📦</span>
+  <div class="install-banner__text">
+    <strong>Добавить SKLAD на экран</strong>
+    Быстрый доступ без браузера
+  </div>
+  <button class="install-banner__btn" onclick="installPWA()">Установить</button>
+  <button class="install-banner__close" onclick="dismissInstallBanner()" aria-label="Закрыть">×</button>
+</div>
+
+<!-- ── Sidebar Overlay (мобильный) ────────────────────────── -->
+<div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+<!-- ── Mobile JS ──────────────────────────────────────────── -->
+<script src="{{ url_for('static', filename='mobile.js') }}"></script>
 
 </body>
 </html>

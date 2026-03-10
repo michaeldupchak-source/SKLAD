@@ -1374,6 +1374,15 @@ def inventory_delete(inv_id):
     return redirect(url_for('inventory'))
 
 
+# ── PWA: Service Worker route (needs correct headers) ──────
+@app.route('/static/sw.js')
+def service_worker():
+    response = send_from_directory('static', 'sw.js')
+    response.headers['Service-Worker-Allowed'] = '/'
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
+
 if __name__ == "__main__":
     init_db()
     # Добавляем host='0.0.0.0'
