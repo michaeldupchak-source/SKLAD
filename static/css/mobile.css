@@ -134,62 +134,123 @@
    ══════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
 
-  /* Показываем мобильные элементы */
+  /* ── Показываем мобильные элементы ─────────────────── */
   .mobile-nav { display: block; }
   .mobile-fab { display: flex; }
 
-  /* Скрываем desktop sidebar и его сдвиг main */
-  .sidebar { display: none !important; }
-  .main   { margin-left: 0 !important; transition: none !important; }
-
-  /* Паддинг под bottom nav */
-  .content {
-    padding: 16px 14px calc(72px + env(safe-area-inset-bottom, 0px)) !important;
+  /* ── Корневой запрет горизонтального переполнения ────── */
+  html, body {
+    overflow-x: hidden;
+    max-width: 100%;
+    width: 100%;
   }
 
-  /* Topbar */
+  /* ── Весь контент не шире экрана ────────────────────── */
+  .main {
+    margin-left: 0 !important;
+    transition: none !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    overflow-x: hidden;
+  }
+
+  /* Скрываем desktop sidebar */
+  .sidebar { display: none !important; }
+
+  /* ── Паддинг под bottom nav ─────────────────────────── */
+  .content {
+    padding: 16px 14px calc(72px + env(safe-area-inset-bottom, 0px)) !important;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* ── Topbar ─────────────────────────────────────────── */
   .topbar {
     padding: 0 14px !important;
     height: 52px;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   /* Скрываем breadcrumb, оставляем кнопки справа */
   .breadcrumb { display: none; }
 
-  /* Кнопки — минимум 44px */
+  /* ── Карточки ─────────────────────────────────────── */
+  .card {
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  /* ── Кнопки — минимум 44px ──────────────────────────── */
   .btn { min-height: 44px; }
   .btn-sm { min-height: 36px; }
 
-  /* Поля форм — 16px предотвращает зум на iOS */
-  input, select, textarea { font-size: 16px !important; }
+  /* ── Поля форм — 16px предотвращает зум на iOS ──────── */
+  input, select, textarea {
+    font-size: 16px !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box;
+  }
 
-  /* Таблицы — горизонтальный скролл */
+  /* ── Таблицы — горизонтальный скролл ────────────────── */
   .table-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    max-width: 100%;
   }
 
-  /* Stat grid — 2 колонки */
+  table {
+    min-width: 0;
+  }
+
+  /* ── Stat grid — 2 колонки ──────────────────────────── */
   .stat-grid {
     grid-template-columns: repeat(2, 1fr) !important;
     gap: 10px;
   }
 
-  /* Filters bar — wrap */
+  /* ── Filters bar — wrap, не выходит за экран ────────── */
   .filters-bar {
     gap: 8px;
     padding: 12px;
+    flex-wrap: wrap;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .filters-bar .form-group {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    max-width: 100%;
   }
   .filters-bar input,
   .filters-bar select {
     min-width: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* inline style min-width на инпутах — override */
+  input[style*="min-width"],
+  select[style*="min-width"] {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  /* ── Grid → одна колонка ────────────────────────────── */
+  .grid-2 { grid-template-columns: 1fr !important; }
+
+  /* ── Flex-ряды с margin-left:auto → stack ───────────── */
+  .filters-bar > .flex,
+  .filters-bar > [style*="margin-left:auto"],
+  .filters-bar > [style*="margin-left: auto"] {
+    margin-left: 0 !important;
+    margin-top: 4px;
     width: 100%;
   }
 
-  /* Grid → одна колонка */
-  .grid-2 { grid-template-columns: 1fr !important; }
-
-  /* Модальное окно — sheet снизу */
+  /* ── Модальное окно — sheet снизу ───────────────────── */
   .modal-overlay { align-items: flex-end !important; padding: 0 !important; }
   .modal {
     width: 100% !important;
@@ -198,6 +259,7 @@
     max-height: 90vh;
     overflow-y: auto;
     padding-bottom: max(20px, env(safe-area-inset-bottom));
+    box-sizing: border-box;
   }
   .modal::before {
     content: '';
