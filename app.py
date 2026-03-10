@@ -9,7 +9,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from sqlite3 import IntegrityError
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from flask import Flask, render_template, request, redirect, url_for, g, flash
+from flask import Flask, render_template, request, redirect, url_for, g, flash, send_from_directory
 from flask_login import (LoginManager, UserMixin,
                          login_user, logout_user, current_user)
 from flask_wtf.csrf import CSRFProtect
@@ -28,6 +28,9 @@ else:
 
 csrf = CSRFProtect(app)
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "warehouse.db")
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "uploads")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+ALLOWED_LOGO_EXT = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'}
 
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
@@ -258,10 +261,21 @@ def local_dt_filter(value, fmt='%d.%m.%Y %H:%M'):
 # ── Context processor ──────────────────────────────────────
 @app.context_processor
 def inject_globals():
-    return dict(app_tz=get_setting('timezone', 'UTC'))
+    org_logo = get_setting('org_logo')
+    org_logo_url = url_for('uploaded_file', filename=org_logo) if org_logo else None
+    return dict(
+        app_tz=get_setting('timezone', 'UTC'),
+        org_name=get_setting('org_name', 'WMS'),
+        org_subtitle=get_setting('org_subtitle', 'Складской учёт'),
+        org_logo_url=org_logo_url,
+    )
 
 # ── Auth guard (replaces @login_required on every route) ───
-PUBLIC = {'login', 'setup', 'static'}
+PUBLIC = {'login', 'setup', 'static', 'uploaded_file'}
+
+@app.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
 
 @app.before_request
 def check_auth():
@@ -381,6 +395,37 @@ def settings():
             db.commit()
             flash('Часовой пояс сохранён')
 
+        elif action == 'branding' and current_user.role == 'admin':
+            org_name     = request.form.get('org_name', '').strip()
+            org_subtitle = request.form.get('org_subtitle', '').strip()
+            set_setting(db, 'org_name',     org_name     or 'WMS')
+            set_setting(db, 'org_subtitle', org_subtitle or 'Складской учёт')
+            logo_file = request.files.get('org_logo')
+            if logo_file and logo_file.filename:
+                ext = logo_file.filename.rsplit('.', 1)[-1].lower()
+                if ext in ALLOWED_LOGO_EXT:
+                    old = get_setting('org_logo')
+                    if old:
+                        try: os.remove(os.path.join(UPLOAD_FOLDER, old))
+                        except OSError: pass
+                    filename = f'org_logo.{ext}'
+                    logo_file.save(os.path.join(UPLOAD_FOLDER, filename))
+                    set_setting(db, 'org_logo', filename)
+                else:
+                    flash('Недопустимый формат (допустимы: png, jpg, gif, webp, svg)')
+                    return redirect(url_for('settings'))
+            db.commit()
+            flash('Настройки организации сохранены')
+
+        elif action == 'delete_logo' and current_user.role == 'admin':
+            old = get_setting('org_logo')
+            if old:
+                try: os.remove(os.path.join(UPLOAD_FOLDER, old))
+                except OSError: pass
+                set_setting(db, 'org_logo', '')
+                db.commit()
+            flash('Логотип удалён')
+
         elif action == 'theme':
             theme = request.form.get('theme', 'system')
             if theme in ('dark', 'light', 'system'):
@@ -463,6 +508,9 @@ def settings():
         current_theme=user_theme,
         danger_mode=danger_mode,
         danger_weeks=int(danger_weeks),
+        s_org_name=get_setting('org_name', 'WMS'),
+        s_org_subtitle=get_setting('org_subtitle', 'Складской учёт'),
+        s_org_logo=get_setting('org_logo'),
     )
 
 
