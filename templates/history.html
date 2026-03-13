@@ -70,7 +70,6 @@
           <th style="width:120px;text-align:right">Сумма</th>
           <th>Комментарий</th>
           <th style="width:90px"></th>
-          <th style="width:40px"></th>
         </tr>
       </thead>
       <tbody>
@@ -139,14 +138,6 @@
                 <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
               </form>
             </div>
-          </td>
-          <td @click.stop style="text-align:center">
-            {% if row.audit_count > 0 %}
-            <button class="btn btn-ghost btn-sm audit-btn"
-              style="padding:2px 6px;font-size:0.7rem;color:var(--text-muted)"
-              data-op-id="{{ op.id }}"
-              title="История изменений ({{ row.audit_count }})">✏️ {{ row.audit_count }}</button>
-            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -237,6 +228,17 @@
         <span style="font-family:var(--mono);font-size:1.3rem;color:var(--accent);font-weight:700">{{ "%.2f" | format(total_sum.v) }} ₽</span>
       </div>
       {% endif %}
+      {% if row.audit_count > 0 %}
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+        <button type="button"
+          class="btn btn-ghost btn-sm"
+          style="width:100%;justify-content:center;gap:6px;color:var(--text-muted);font-size:0.8rem"
+          onclick="openAuditModal({{ op.id }})">
+          ✏️ История изменений
+          <span style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:0 6px;font-family:var(--mono);font-size:0.7rem">{{ row.audit_count }}</span>
+        </button>
+      </div>
+      {% endif %}
     </div>
   </div>
   {% endfor %}
@@ -271,9 +273,9 @@
 </div>
 </div>
 
-<!-- Audit log modal -->
-<div id="audit-modal-overlay" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeAuditModal()">
-  <div class="modal" style="max-width:560px;max-height:80vh;display:flex;flex-direction:column">
+<!-- Audit log modal (opens on top of detail modal) -->
+<div id="audit-modal-overlay" class="modal-overlay" style="display:none;z-index:1100" onclick="if(event.target===this)closeAuditModal()">
+  <div class="modal" style="max-width:520px;max-height:80vh;display:flex;flex-direction:column">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-shrink:0">
       <div>
         <div style="font-family:var(--mono);font-size:0.65rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:4px">ИСТОРИЯ ИЗМЕНЕНИЙ</div>
@@ -309,7 +311,13 @@ function closeAuditModal() {
 }
 
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') closeAuditModal();
+  if (e.key === 'Escape') {
+    var overlay = document.getElementById('audit-modal-overlay');
+    if (overlay && overlay.style.display !== 'none') {
+      e.stopImmediatePropagation();
+      closeAuditModal();
+    }
+  }
 });
 
 document.querySelectorAll('.audit-btn').forEach(function(btn) {
