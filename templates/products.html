@@ -235,6 +235,13 @@ tr.archived-row { opacity:0.55; }
           'X-CSRFToken': csrfToken
         },
         body: JSON.stringify({ order: order })
+      })
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+      })
+      .catch(function(err) {
+        console.error('Reorder failed:', err);
+        alert('Не удалось сохранить порядок товаров. Попробуйте ещё раз.');
       });
     }
   });
