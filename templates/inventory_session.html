@@ -23,7 +23,7 @@
   <div style="flex:1">
     <div style="font-family:var(--mono);font-size:0.7rem;color:var(--accent);letter-spacing:1px;margin-bottom:4px">
       ИНВЕНТАРИЗАЦИЯ #{{ session.id }}
-      {% if session.status == 'completed' %}· ЗАВЕРШЕНА {{ session.completed_at[:10].replace('-','.') }}{% endif %}
+      {% if session.status == 'completed' %}· ЗАВЕРШЕНА {{ session.completed_at|localdate }}{% endif %}
     </div>
     <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.5">
       {% if session.status == 'draft' %}

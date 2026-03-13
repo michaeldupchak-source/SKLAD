@@ -199,8 +199,8 @@
             {% else %}<span class="badge badge-out">▼ РАСХОД</span>{% endif %}
           </td>
           <td class="td-mono text-muted" style="font-size:0.75rem">
-            {{ op.created_at[:10].replace('-','.') }}<br>
-            <span style="opacity:0.6">{{ op.created_at[11:16] }}</span>
+            {{ op.created_at|localdate }}<br>
+            <span style="opacity:0.6">{{ op.created_at|localtime }}</span>
           </td>
           <td>
             {% for item in items %}
@@ -236,7 +236,7 @@
         </div>
         <button type="button" class="btn btn-ghost btn-sm" @click="detail=null">✕</button>
       </div>
-      <div class="td-mono text-muted text-sm mb-16">{{ op.created_at[:10].replace('-','.') }} {{ op.created_at[11:16] }}</div>
+      <div class="td-mono text-muted text-sm mb-16">{{ op.created_at|localdt }}</div>
       {% if op.comment %}<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:0.85rem;color:var(--text-muted);margin-bottom:14px">{{ op.comment }}</div>{% endif %}
       <table style="width:100%;border-collapse:collapse">
         <thead><tr>

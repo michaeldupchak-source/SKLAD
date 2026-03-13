@@ -56,13 +56,13 @@
             {% endif %}
           </td>
           <td class="td-mono text-muted" style="font-size:0.75rem">
-            {{ s.created_at[:10].replace('-','.') }}
-            <span style="opacity:0.6">{{ s.created_at[11:16] }}</span>
+            {{ s.created_at|localdate }}
+            <span style="opacity:0.6">{{ s.created_at|localtime }}</span>
           </td>
           <td class="td-mono text-muted" style="font-size:0.75rem">
             {% if s.completed_at %}
-            {{ s.completed_at[:10].replace('-','.') }}
-            <span style="opacity:0.6">{{ s.completed_at[11:16] }}</span>
+            {{ s.completed_at|localdate }}
+            <span style="opacity:0.6">{{ s.completed_at|localtime }}</span>
             {% else %}—{% endif %}
           </td>
           <td class="text-muted text-sm">{{ s.username or '—' }}</td>

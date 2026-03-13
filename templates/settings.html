@@ -247,7 +247,7 @@
               {{ 'ADMIN' if u.role == 'admin' else 'USER' }}
             </span>
           </td>
-          <td class="td-mono text-muted" style="font-size:0.75rem">{{ u.created_at[:10].replace('-','.') }}</td>
+          <td class="td-mono text-muted" style="font-size:0.75rem">{{ u.created_at|localdate }}</td>
           <td>
             {% if u.id != current_user.id %}
             <form method="post" data-confirm-message="Удалить пользователя {{ u.username }}? Это действие нельзя отменить." data-confirm-title="Удалить пользователя?" data-confirm-type="danger" data-confirm-ok="Удалить">

@@ -127,8 +127,8 @@
           </td>
           <td style="text-align:right" class="td-mono text-muted" style="font-size:0.75rem;white-space:nowrap">
             {% if p.last_op_date %}
-            {{ p.last_op_date[:10].replace('-','.') }}
-            <span style="opacity:0.6">{{ p.last_op_date[11:16] }}</span>
+            {{ p.last_op_date|localdate }}
+            <span style="opacity:0.6">{{ p.last_op_date|localtime }}</span>
             {% else %}—{% endif %}
           </td>
         </tr>

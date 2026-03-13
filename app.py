@@ -262,11 +262,9 @@ def init_db():
 
 
 # ── Jinja filter: UTC string → local timezone ──────────────
-@app.template_filter('localdt')
-def local_dt_filter(value, fmt='%d.%m.%Y %H:%M'):
+def _get_local_dt(value):
     if not value:
-        return '—'
-    # Cache timezone per request to avoid repeated DB queries
+        return None
     if 'cached_tz' not in g:
         tz_name = get_setting('timezone', 'UTC')
         try:
@@ -276,9 +274,32 @@ def local_dt_filter(value, fmt='%d.%m.%Y %H:%M'):
             g.cached_tz = ZoneInfo('UTC')
     try:
         dt = datetime.strptime(str(value)[:19], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
-        return dt.astimezone(g.cached_tz).strftime(fmt)
+        return dt.astimezone(g.cached_tz)
     except (ValueError, TypeError):
-        return str(value)[:16]
+        return None
+
+@app.template_filter('localdt')
+def local_dt_filter(value, fmt='%d.%m.%Y %H:%M'):
+    dt = _get_local_dt(value)
+    if dt is None:
+        return str(value)[:16] if value else '—'
+    return dt.strftime(fmt)
+
+@app.template_filter('localdate')
+def local_date_filter(value):
+    """Return date only in local timezone: dd.mm.yyyy"""
+    dt = _get_local_dt(value)
+    if dt is None:
+        return str(value)[:10].replace('-', '.') if value else '—'
+    return dt.strftime('%d.%m.%Y')
+
+@app.template_filter('localtime')
+def local_time_filter(value):
+    """Return time only in local timezone: HH:MM"""
+    dt = _get_local_dt(value)
+    if dt is None:
+        return str(value)[11:16] if value else '—'
+    return dt.strftime('%H:%M')
 
 # ── Context processor ──────────────────────────────────────
 @app.context_processor

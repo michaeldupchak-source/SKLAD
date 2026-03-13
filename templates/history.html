@@ -90,8 +90,8 @@
             {% endif %}
           </td>
           <td class="td-mono text-muted" style="font-size:0.75rem">
-            {{ op.created_at[:10].replace('-','.') }}<br>
-            <span style="opacity:0.6">{{ op.created_at[11:16] }}</span>
+            {{ op.created_at|localdate }}<br>
+            <span style="opacity:0.6">{{ op.created_at|localtime }}</span>
           </td>
           <td>
             {% if op.op_username %}
@@ -170,7 +170,7 @@
         <button type="button" class="btn btn-ghost btn-sm" @click="detail=null">✕</button>
       </div>
       <div class="td-mono text-muted text-sm mb-16">
-        {{ op.created_at[:10].replace('-','.') }} {{ op.created_at[11:16] }}
+        {{ op.created_at|localdt }}
         {% if op.op_username %}
         <span style="margin-left:10px;display:inline-flex;align-items:center;gap:5px">
           <span style="width:18px;height:18px;border-radius:50%;background:var(--accent-dim);
