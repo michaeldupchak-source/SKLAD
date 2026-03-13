@@ -218,6 +218,16 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_op_items_product_id ON operation_items(product_id);
     CREATE INDEX IF NOT EXISTS idx_lots_product_id ON lots(product_id);
     CREATE INDEX IF NOT EXISTS idx_lots_product_remaining ON lots(product_id, remaining_qty);
+    CREATE TABLE IF NOT EXISTS operation_audit_log (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        operation_id    INTEGER NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+        action          TEXT NOT NULL CHECK(action IN ('created','updated','deleted')),
+        changed_at      TEXT NOT NULL,
+        changed_by_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        changed_by_name TEXT NOT NULL,
+        snapshot        TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_log_operation_id ON operation_audit_log(operation_id);
     """)
         db.commit()
         # Runtime migration: add user_id to operations for existing databases
@@ -256,6 +266,18 @@ def init_db():
                 product_id INTEGER NOT NULL REFERENCES products(id),
                 expected_qty REAL NOT NULL, actual_qty REAL,
                 delta REAL, reason TEXT, price REAL)""")
+            db.commit()
+        # Runtime migration: create operation_audit_log for existing databases
+        if 'operation_audit_log' not in tables:
+            db.execute("""CREATE TABLE operation_audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                operation_id INTEGER NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+                action TEXT NOT NULL CHECK(action IN ('created','updated','deleted')),
+                changed_at TEXT NOT NULL,
+                changed_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                changed_by_name TEXT NOT NULL,
+                snapshot TEXT NOT NULL)""")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_operation_id ON operation_audit_log(operation_id)")
             db.commit()
     finally:
         db.close()
@@ -628,6 +650,51 @@ def fifo_remove_lot(db, operation_item_id):
         db.execute("DELETE FROM lots WHERE id=?", (lot["id"],))
 
 
+# ── Audit log helpers ──────────────────────────────────────
+import json as _json
+
+def _build_snapshot(db, operation_id):
+    """Return JSON snapshot of an operation + its items (for audit log)."""
+    op = db.execute("SELECT * FROM operations WHERE id=?", (operation_id,)).fetchone()
+    if not op:
+        return _json.dumps({})
+    items = db.execute("""
+        SELECT oi.quantity, oi.price_per_unit, oi.reason,
+               p.name as product_name, u.short_name as unit_short
+        FROM operation_items oi
+        JOIN products p ON p.id = oi.product_id
+        LEFT JOIN units u ON u.id = p.unit_id
+        WHERE oi.operation_id = ?
+        ORDER BY oi.id
+    """, (operation_id,)).fetchall()
+    return _json.dumps({
+        "type":       op["type"],
+        "created_at": op["created_at"],
+        "comment":    op["comment"],
+        "items": [
+            {
+                "product": i["product_name"],
+                "unit":    i["unit_short"] or "",
+                "qty":     i["quantity"],
+                "price":   i["price_per_unit"],
+                "reason":  i["reason"],
+            }
+            for i in items
+        ]
+    }, ensure_ascii=False)
+
+def _write_audit(db, operation_id, action, snapshot=None):
+    """Write one audit log entry. snapshot=None → take it now from DB."""
+    if snapshot is None:
+        snapshot = _build_snapshot(db, operation_id)
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    name = current_user.username if current_user.is_authenticated else 'system'
+    uid  = current_user.id       if current_user.is_authenticated else None
+    db.execute(
+        "INSERT INTO operation_audit_log (operation_id, action, changed_at, changed_by_id, changed_by_name, snapshot) VALUES (?,?,?,?,?,?)",
+        (operation_id, action, now, uid, name, snapshot)
+    )
+
 # ── Root ───────────────────────────────────────────────────
 @app.route("/")
 def index():
@@ -867,6 +934,8 @@ def create_operation():
                 else:
                     db.execute("UPDATE products SET current_stock = current_stock - ? WHERE id=?", (qty, pid))
             db.execute("COMMIT")
+            _write_audit(db, op_id, 'created')
+            db.commit()
         except Exception as e:
             db.execute("ROLLBACK")
             logger.exception("create_operation failed: %s", e)
@@ -942,6 +1011,8 @@ def update_operation(op_id):
 
     try:
         db.execute("BEGIN")
+        # Snapshot BEFORE changes — stored as "before" in audit
+        before_snapshot = _build_snapshot(db, op_id)
         old_items = db.execute("SELECT * FROM operation_items WHERE operation_id=?", (op_id,)).fetchall()
         for item in old_items:
             if op["type"] == "IN":
@@ -976,6 +1047,14 @@ def update_operation(op_id):
             else:
                 db.execute("UPDATE products SET current_stock = current_stock - ? WHERE id=?", (qty, pid))
         db.execute("COMMIT")
+        # Write audit after commit — after snapshot is fresh
+        after_snapshot = _build_snapshot(db, op_id)
+        combined = _json.dumps({
+            "before": _json.loads(before_snapshot),
+            "after":  _json.loads(after_snapshot)
+        }, ensure_ascii=False)
+        _write_audit(db, op_id, 'updated', snapshot=combined)
+        db.commit()
     except Exception as e:
         db.execute("ROLLBACK")
         logger.exception("update_operation failed: %s", e)
@@ -989,6 +1068,11 @@ def delete_operation(op_id):
     op = db.execute("SELECT * FROM operations WHERE id=?", (op_id,)).fetchone()
     if not op:
         return redirect(url_for("history"))
+    # Snapshot before deletion (audit log row survives via ON DELETE CASCADE on operation_id,
+    # but we still store the final state so it's readable even after the op is gone)
+    before_snapshot = _build_snapshot(db, op_id)
+    _write_audit(db, op_id, 'deleted', snapshot=before_snapshot)
+    db.commit()
     for item in db.execute("SELECT * FROM operation_items WHERE operation_id=?", (op_id,)).fetchall():
         if op["type"] == "IN":
             fifo_remove_lot(db, item["id"])
@@ -1002,6 +1086,26 @@ def delete_operation(op_id):
     db.commit()
     return redirect(url_for("history"))
 
+
+# ── Operation audit log API ────────────────────────────────
+@app.route("/operations/<int:op_id>/audit")
+def operation_audit(op_id):
+    db = get_db()
+    rows = db.execute("""
+        SELECT action, changed_at, changed_by_name, snapshot
+        FROM operation_audit_log
+        WHERE operation_id = ?
+        ORDER BY id ASC
+    """, (op_id,)).fetchall()
+    result = []
+    for r in rows:
+        result.append({
+            "action":     r["action"],
+            "changed_at": r["changed_at"],
+            "by":         r["changed_by_name"],
+            "snapshot":   _json.loads(r["snapshot"])
+        })
+    return _json.dumps(result, ensure_ascii=False), 200, {"Content-Type": "application/json"}
 
 # ── Stats detail ───────────────────────────────────────────
 @app.route("/stats/detail")
@@ -1173,8 +1277,21 @@ def history():
         items_by_op = {}
         for item in all_items:
             items_by_op.setdefault(item["operation_id"], []).append(item)
+        # Audit log counts per operation (single query)
+        audit_counts = {}
+        for row in db.execute(f"""
+            SELECT operation_id, COUNT(*) as cnt
+            FROM operation_audit_log
+            WHERE operation_id IN ({placeholders})
+            GROUP BY operation_id
+        """, op_ids).fetchall():
+            audit_counts[row["operation_id"]] = row["cnt"]
         for op in ops:
-            ops_with_items.append({"op": op, "items": items_by_op.get(op["id"], [])})
+            ops_with_items.append({
+                "op":          op,
+                "items":       items_by_op.get(op["id"], []),
+                "audit_count": audit_counts.get(op["id"], 0),
+            })
 
     all_products = db.execute("SELECT id, name FROM products WHERE is_active=1 ORDER BY sort_order, name").fetchall()
     all_users    = db.execute("SELECT id, username FROM users ORDER BY username").fetchall()

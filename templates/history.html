@@ -70,6 +70,7 @@
           <th style="width:120px;text-align:right">Сумма</th>
           <th>Комментарий</th>
           <th style="width:90px"></th>
+          <th style="width:40px"></th>
         </tr>
       </thead>
       <tbody>
@@ -138,6 +139,14 @@
                 <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
               </form>
             </div>
+          </td>
+          <td @click.stop style="text-align:center">
+            {% if row.audit_count > 0 %}
+            <button class="btn btn-ghost btn-sm audit-btn"
+              style="padding:2px 6px;font-size:0.7rem;color:var(--text-muted)"
+              data-op-id="{{ op.id }}"
+              title="История изменений ({{ row.audit_count }})">✏️ {{ row.audit_count }}</button>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -261,4 +270,120 @@
   {% endif %}
 </div>
 </div>
+
+<!-- Audit log modal -->
+<div id="audit-modal-overlay" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeAuditModal()">
+  <div class="modal" style="max-width:560px;max-height:80vh;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-shrink:0">
+      <div>
+        <div style="font-family:var(--mono);font-size:0.65rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:4px">ИСТОРИЯ ИЗМЕНЕНИЙ</div>
+        <div id="audit-modal-title" style="font-weight:600"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="closeAuditModal()">&#x2715;</button>
+    </div>
+    <div id="audit-modal-body" style="overflow-y:auto;flex:1">
+      <div style="color:var(--text-muted);text-align:center;padding:2rem">Загрузка...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+function openAuditModal(opId) {
+  var overlay = document.getElementById('audit-modal-overlay');
+  var body    = document.getElementById('audit-modal-body');
+  var title   = document.getElementById('audit-modal-title');
+  title.textContent = 'Операция #' + opId;
+  body.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:2rem">Загрузка...</div>';
+  overlay.style.display = 'flex';
+
+  fetch('/operations/' + opId + '/audit')
+    .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(entries) { renderAuditLog(body, entries); })
+    .catch(function(err) {
+      body.innerHTML = '<div style="color:var(--red);padding:1rem">Ошибка загрузки: ' + err + '</div>';
+    });
+}
+
+function closeAuditModal() {
+  document.getElementById('audit-modal-overlay').style.display = 'none';
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeAuditModal();
+});
+
+document.querySelectorAll('.audit-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() { openAuditModal(this.dataset.opId); });
+});
+
+function actionLabel(action) {
+  return { created: '➕ Создано', updated: '✏️ Изменено', deleted: '❌ Удалено' }[action] || action;
+}
+
+function fmtTs(ts) {
+  // ts is UTC 'YYYY-MM-DD HH:MM:SS' — display as-is (server already in user TZ? no, UTC stored)
+  // We do a simple local reformat
+  if (!ts) return '—';
+  var d = new Date(ts.replace(' ', 'T') + 'Z');
+  return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'});
+}
+
+function fmtItems(items) {
+  if (!items || !items.length) return '<em style="color:var(--text-muted)">Без товаров</em>';
+  return items.map(function(i) {
+    var price = i.price != null ? ' &times; ' + parseFloat(i.price).toFixed(2) + ' ₽' : '';
+    return '<span style="display:inline-block;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 7px;font-size:0.72rem;margin:2px;font-family:var(--mono)">' +
+      i.product + ' ×' + i.qty + (i.unit ? ' ' + i.unit : '') + price + '</span>';
+  }).join(' ');
+}
+
+function renderAuditLog(container, entries) {
+  if (!entries.length) {
+    container.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:2rem">История пуста</div>';
+    return;
+  }
+  var html = '<div style="position:relative">';
+  entries.forEach(function(e, idx) {
+    var snap     = e.snapshot;
+    var isBefore = snap.before != null;
+    var before   = isBefore ? snap.before : null;
+    var after    = isBefore ? snap.after  : snap;
+    var typeMap  = { IN: '▲ ПРИХОД', OUT: '▼ РАСХОД', ADJUST: '⊞ КОРРЕКТИРОВКА' };
+    var isLast   = idx === entries.length - 1;
+
+    html += '<div style="display:flex;gap:12px;margin-bottom:' + (isLast ? '0' : '16px') + '">';
+    // Timeline dot
+    html += '<div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0">';
+    html += '<div style="width:28px;height:28px;border-radius:50%;background:var(--surface2);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:0.8rem">' + (e.action==='created' ? '➕' : e.action==='deleted' ? '❌' : '✏️') + '</div>';
+    if (!isLast) html += '<div style="width:2px;flex:1;background:var(--border);margin:4px 0"></div>';
+    html += '</div>';
+    // Content
+    html += '<div style="flex:1;padding-bottom:4px">';
+    html += '<div style="display:flex;gap:8px;align-items:baseline;margin-bottom:6px;flex-wrap:wrap">';
+    html += '<span style="font-weight:600">' + actionLabel(e.action) + '</span>';
+    html += '<span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted)">' + fmtTs(e.changed_at) + '</span>';
+    html += '<span style="font-family:var(--mono);font-size:0.72rem;color:var(--accent)">' + e.by + '</span>';
+    html += '</div>';
+
+    if (e.action === 'updated' && before) {
+      // Show diff: before and after items
+      html += '<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:3px">До:</div>';
+      html += '<div style="margin-bottom:6px;opacity:0.6">' + fmtItems(before.items) + '</div>';
+      if (before.comment !== after.comment) {
+        html += '<div style="font-size:0.72rem;color:var(--text-muted)">Комм.: <s>' + (before.comment||'—') + '</s> → ' + (after.comment||'—') + '</div>';
+      }
+      html += '<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:3px">Стало:</div>';
+      html += '<div>' + fmtItems(after.items) + '</div>';
+    } else {
+      // created or deleted — show snapshot items
+      var showSnap = after || snap;
+      html += '<div>' + fmtItems(showSnap.items) + '</div>';
+      if (showSnap.comment) html += '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px">Комм.: ' + showSnap.comment + '</div>';
+    }
+    html += '</div></div>';
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+</script>
 {% endblock %}
