@@ -853,7 +853,10 @@ def new_operation():
         WHERE p.is_active = 1 ORDER BY p.sort_order, p.name
     """).fetchall()
     stock_map = {str(p["id"]): float(p["current_stock"]) for p in prods}
-    return render_template("operation_new.html", products=prods, stock_map=stock_map)
+    _tz = ZoneInfo(get_setting('timezone', 'UTC'))
+    now_local = datetime.now(_tz).strftime('%Y-%m-%dT%H:%M')
+    return render_template("operation_new.html", products=prods, stock_map=stock_map,
+                           now_local=now_local)
 
 @app.route("/operations/create", methods=["POST"])
 def create_operation():
@@ -866,8 +869,13 @@ def create_operation():
     dt_str  = request.form.get("created_at", "")
     if dt_str:
         try:
-            created_at = datetime.strptime(dt_str, "%Y-%m-%dT%H:%M").strftime("%Y-%m-%d %H:%M:%S")
-        except (ValueError, TypeError):
+            # datetime-local sends LOCAL time — convert to UTC before saving
+            _tz = ZoneInfo(get_setting('timezone', 'UTC'))
+            created_at = (datetime.strptime(dt_str, "%Y-%m-%dT%H:%M")
+                          .replace(tzinfo=_tz)
+                          .astimezone(timezone.utc)
+                          .strftime("%Y-%m-%d %H:%M:%S"))
+        except (ValueError, TypeError, Exception):
             created_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     else:
         created_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -964,8 +972,18 @@ def edit_operation(op_id):
         WHERE p.is_active = 1 ORDER BY p.sort_order, p.name
     """).fetchall()
     stock_map = {str(p["id"]): float(p["current_stock"]) for p in prods}
+    # Convert stored UTC time to local for pre-filling the datetime-local field
+    _tz = ZoneInfo(get_setting('timezone', 'UTC'))
+    try:
+        _op_dt_local = (datetime.strptime(op["created_at"][:19], "%Y-%m-%d %H:%M:%S")
+                        .replace(tzinfo=timezone.utc)
+                        .astimezone(_tz)
+                        .strftime("%Y-%m-%dT%H:%M"))
+    except Exception:
+        _op_dt_local = op["created_at"][:16].replace(" ", "T")
     return render_template("operation_edit.html", op=op, items=items,
-                           products=prods, stock_map=stock_map)
+                           products=prods, stock_map=stock_map,
+                           op_dt_local=_op_dt_local)
 
 @app.route("/operations/<int:op_id>/update", methods=["POST"])
 def update_operation(op_id):
@@ -981,8 +999,13 @@ def update_operation(op_id):
     dt_str  = request.form.get("created_at", "")
     if dt_str:
         try:
-            created_at = datetime.strptime(dt_str, "%Y-%m-%dT%H:%M").strftime("%Y-%m-%d %H:%M:%S")
-        except (ValueError, TypeError):
+            # datetime-local sends LOCAL time — convert to UTC before saving
+            _tz = ZoneInfo(get_setting('timezone', 'UTC'))
+            created_at = (datetime.strptime(dt_str, "%Y-%m-%dT%H:%M")
+                          .replace(tzinfo=_tz)
+                          .astimezone(timezone.utc)
+                          .strftime("%Y-%m-%d %H:%M:%S"))
+        except (ValueError, TypeError, Exception):
             created_at = op["created_at"]
     else:
         created_at = op["created_at"]

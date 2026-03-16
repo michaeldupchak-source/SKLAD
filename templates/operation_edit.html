@@ -75,7 +75,7 @@ var INITIAL_ROWS = [
     <div class="form-group mb-0">
       <label>Дата и время</label>
       <input type="datetime-local" name="created_at" style="font-family:var(--mono)"
-        value="{{ op.created_at[:16].replace(' ', 'T') }}">
+        value="{{ op_dt_local }}">
     </div>
     <div class="form-group mb-0">
       <label>Комментарий</label>
