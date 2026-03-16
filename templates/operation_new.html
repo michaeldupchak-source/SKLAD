@@ -41,7 +41,7 @@ var STOCK_MAP = {{ stock_map | tojson }};
   }
 }" style="max-width:900px">
 
-<form method="post" action="{{ url_for('create_operation') }}" @submit="submitting = true">
+<form method="post" action="{{ url_for('create_operation') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
 <!-- Type selector -->
@@ -190,6 +190,7 @@ var STOCK_MAP = {{ stock_map | tojson }};
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
     <a href="{{ url_for('history') }}" class="btn btn-ghost">Отмена</a>
     <button type="submit" class="btn btn-primary" style="min-width:200px"
+      @mousedown="submitting = true; setTimeout(() => submitting = false, 500)"
       :style="opType==='OUT' && overflowWarnings.length > 0 ? 'background:var(--red);color:#fff' : ''">
       <span x-text="opType==='IN' ? '▲ Оформить пополнение' : '▼ Оформить изъятие'"></span>
     </button>

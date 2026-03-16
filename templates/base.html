@@ -2,7 +2,17 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover"/>
+<!-- PWA -->
+<meta name="theme-color" content="#e8c44a"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="SKLAD"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}"/>
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-180.png') }}"/>
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/icon-32.png') }}"/>
+<meta name="csrf-token" content="{{ csrf_token() }}"/>
 <title>{% block title %}Склад{% endblock %} — WMS</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
@@ -11,8 +21,20 @@
   // Fix #12: Apply theme immediately to prevent flash of dark theme on light mode
   (function() {
     // Fix #12: Apply theme before render to prevent flash
-    var theme = '{% if current_user.is_authenticated and current_user.theme == "light" %}light{% else %}dark{% endif %}';
+    var savedTheme = '{{ current_user.theme if current_user.is_authenticated else "system" }}';
+    var theme;
+    if (savedTheme === 'system') {
+      theme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    } else {
+      theme = savedTheme;
+    }
     document.documentElement.setAttribute('data-theme', theme);
+    // Live-update when system preference changes (only in system mode)
+    if (savedTheme === 'system') {
+      window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', function(e) {
+        document.documentElement.setAttribute('data-theme', e.matches ? 'light' : 'dark');
+      });
+    }
 
     // Fix sidebar flash: inject a no-transitions style immediately,
     // then remove it after two rAF cycles (after first real paint).
@@ -75,6 +97,9 @@ body {
   color: var(--text);
   display: flex;
   min-height: 100vh;
+  /* Запрет горизонтального переполнения на мобиле */
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 /* ── Sidebar ─────────────────── */
@@ -107,7 +132,7 @@ body {
   align-items: center;
   gap: 8px;
   overflow: hidden;
-  white-space: nowrap;
+  min-width: 0;
 }
 .logo-icon {
   width: 34px; height: 34px;
@@ -121,6 +146,7 @@ body {
 }
 .logo-text {
   overflow: hidden;
+  min-width: 0;
   transition: opacity 0.15s, width 0.22s;
 }
 .logo-text .wms {
@@ -129,11 +155,22 @@ body {
   font-weight: 700;
   color: var(--text);
   letter-spacing: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 155px;
+  /* Scale down font for longer names via JS-added class */
 }
+.logo-text .wms.wms-md { font-size: 0.78rem; letter-spacing: 1px; }
+.logo-text .wms.wms-sm { font-size: 0.64rem; letter-spacing: 0.5px; }
 .logo-text .sub {
   font-size: 0.65rem;
   color: var(--text-muted);
   letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 155px;
 }
 .sidebar.collapsed .logo-text { opacity: 0; width: 0; }
 
@@ -597,6 +634,139 @@ html.sidebar-pre-collapsed .sidebar * {
 html.sidebar-pre-collapsed .sidebar { width: 56px !important; }
 html.sidebar-pre-collapsed .main { margin-left: 56px !important; }
 </style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/mobile.css') }}"/>
+{% block extra_head %}{% endblock %}
+
+<!-- ── Global confirm dialog ─────────────────────────────── -->
+<style>
+.wms-confirm-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: wms-fade-in 0.15s ease;
+}
+@keyframes wms-fade-in { from { opacity:0 } to { opacity:1 } }
+.wms-confirm-box {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  padding: 28px 28px 22px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.55);
+  animation: wms-box-in 0.18s cubic-bezier(.2,.8,.4,1);
+}
+@keyframes wms-box-in {
+  from { transform: translateY(10px) scale(0.97); opacity:0 }
+  to   { transform: translateY(0) scale(1); opacity:1 }
+}
+.wms-confirm-icon {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+.wms-confirm-icon.danger  { background: var(--red-dim);   border: 1px solid rgba(239,77,109,0.25); }
+.wms-confirm-icon.warning { background: var(--accent-dim); border: 1px solid rgba(232,196,74,0.25); }
+.wms-confirm-icon.info    { background: rgba(91,138,240,0.1); border: 1px solid rgba(91,138,240,0.25); }
+.wms-confirm-title {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.wms-confirm-msg {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.65;
+  white-space: pre-line;
+}
+.wms-confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+</style>
+
+<script>
+document.addEventListener('alpine:init', function() {
+  Alpine.store('wmsConfirm', {
+    open: false,
+    title: '', message: '', type: 'warning', okText: '', cancelText: '', _resolve: null,
+    show: function(opts) {
+      this.title      = opts.title      || 'Подтверждение';
+      this.message    = opts.message    || '';
+      this.type       = opts.type       || 'warning';
+      this.okText     = opts.okText     || 'Подтвердить';
+      this.cancelText = opts.cancelText || 'Отмена';
+      this.open = true;
+      var self = this;
+      return new Promise(function(r){ self._resolve = r; });
+    },
+    ok:     function(){ this.open=false; if(this._resolve) this._resolve(true);  },
+    cancel: function(){ this.open=false; if(this._resolve) this._resolve(false); }
+  });
+});
+
+window.wmsConfirm = function(opts) { return Alpine.store('wmsConfirm').show(opts); };
+
+// Scale sidebar org name based on character length
+(function() {
+  function scaleLogo() {
+    var el = document.querySelector('.logo-text .wms');
+    if (!el) return;
+    var len = el.textContent.trim().length;
+    el.classList.remove('wms-md', 'wms-sm');
+    if (len > 18) el.classList.add('wms-sm');
+    else if (len > 11) el.classList.add('wms-md');
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', scaleLogo);
+  } else {
+    scaleLogo();
+  }
+})();
+
+// Intercept forms with data-confirm-message attribute
+document.addEventListener('submit', function(e) {
+  var form = e.target;
+  var msg = form.dataset.confirmMessage;
+  if (!msg) return;
+  if (form._wmsOk) { delete form._wmsOk; return; }
+  e.preventDefault();
+  wmsConfirm({
+    title:   form.dataset.confirmTitle  || 'Подтверждение',
+    message: msg,
+    type:    form.dataset.confirmType   || 'warning',
+    okText:  form.dataset.confirmOk     || 'Подтвердить',
+  }).then(function(ok){ if(ok){ form._wmsOk=true; form.submit(); } });
+}, true);
+
+// Intercept links with data-confirm-message attribute
+document.addEventListener('click', function(e) {
+  var el = e.target.closest('a[data-confirm-message]');
+  if (!el) return;
+  e.preventDefault();
+  var href = el.href;
+  wmsConfirm({
+    title:   el.dataset.confirmTitle  || 'Подтверждение',
+    message: el.dataset.confirmMessage,
+    type:    el.dataset.confirmType   || 'warning',
+    okText:  el.dataset.confirmOk     || 'Продолжить',
+  }).then(function(ok){ if(ok) window.location=href; });
+}, true);
+</script>
 </head>
 <body x-data="{
   collapsed: localStorage.getItem('sidebar') === 'collapsed'
@@ -611,10 +781,17 @@ html.sidebar-pre-collapsed .main { margin-left: 56px !important; }
 <aside class="sidebar" :class="{ collapsed: collapsed }">
   <div class="sidebar-logo">
     <div class="logo-badge">
-      <div class="logo-icon">W</div>
+      <div class="logo-icon" style="overflow:hidden;padding:{% if org_logo_url %}0{% else %}inherit{% endif %}">
+        {% if org_logo_url %}
+          <img src="{{ org_logo_url }}" alt="logo"
+               style="width:100%;height:100%;object-fit:cover;border-radius:5px;display:block">
+        {% else %}
+          {{ (org_name[0] if org_name else 'W') | upper }}
+        {% endif %}
+      </div>
       <div class="logo-text">
-        <div class="wms">WMS</div>
-        <div class="sub">Складской учёт</div>
+        <div class="wms">{{ org_name or 'WMS' }}</div>
+        <div class="sub">{{ org_subtitle or 'Складской учёт' }}</div>
       </div>
     </div>
     <button class="sidebar-toggle" @click="collapsed = !collapsed" :title="collapsed ? 'Развернуть' : 'Свернуть'">
@@ -635,6 +812,10 @@ html.sidebar-pre-collapsed .main { margin-left: 56px !important; }
     <a href="{{ url_for('history') }}" data-label="История"
       class="nav-link {% if request.endpoint == 'history' %}active{% endif %}">
       <span class="nav-icon">≡</span><span class="nav-label"> История</span>
+    </a>
+    <a href="{{ url_for('inventory') }}" data-label="Инвентаризация"
+      class="nav-link {% if request.endpoint in ('inventory', 'inventory_session') %}active{% endif %}">
+      <span class="nav-icon">⊠</span><span class="nav-label"> Инвентаризация</span>
     </a>
     <a href="{{ url_for('stats') }}" data-label="Статистика"
       class="nav-link {% if request.endpoint in ('stats', 'stats_detail') %}active{% endif %}">
@@ -692,5 +873,82 @@ html.sidebar-pre-collapsed .main { margin-left: 56px !important; }
     {% block content %}{% endblock %}
   </div>
 </div>
+
+<!-- ── WMS confirm dialog (global) ─────────────────────── -->
+<div x-data x-show="$store.wmsConfirm.open" x-cloak
+     class="wms-confirm-overlay"
+     @keydown.escape.window="$store.wmsConfirm.cancel()"
+     @click.self="$store.wmsConfirm.cancel()">
+  <div class="wms-confirm-box" @click.stop>
+    <div class="wms-confirm-icon"
+         :class="$store.wmsConfirm.type">
+      <span x-text="$store.wmsConfirm.type==='danger' ? '⚠' : $store.wmsConfirm.type==='info' ? 'ℹ' : '◈'"></span>
+    </div>
+    <div class="wms-confirm-title" x-text="$store.wmsConfirm.title"></div>
+    <div class="wms-confirm-msg"   x-text="$store.wmsConfirm.message"></div>
+    <div class="wms-confirm-actions">
+      <button class="btn btn-ghost btn-sm"
+              @click="$store.wmsConfirm.cancel()"
+              x-text="$store.wmsConfirm.cancelText"></button>
+      <button :class="$store.wmsConfirm.type==='danger' ? 'btn btn-danger btn-sm' : 'btn btn-primary btn-sm'"
+              @click="$store.wmsConfirm.ok()"
+              x-text="$store.wmsConfirm.okText"></button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Mobile Bottom Navigation ─────────────────────────── -->
+<nav class="mobile-nav" aria-label="Мобильная навигация">
+  <ul class="mobile-nav__list">
+    <li class="mobile-nav__item">
+      <a href="{{ url_for('stock') }}" class="mobile-nav__link">
+        <span class="mobile-nav__icon">◧</span>
+        <span>Наличие</span>
+      </a>
+    </li>
+    <li class="mobile-nav__item">
+      <a href="{{ url_for('new_operation') }}" class="mobile-nav__link">
+        <span class="mobile-nav__icon">+</span>
+        <span>Операция</span>
+      </a>
+    </li>
+    <li class="mobile-nav__item">
+      <a href="{{ url_for('history') }}" class="mobile-nav__link">
+        <span class="mobile-nav__icon">≡</span>
+        <span>История</span>
+      </a>
+    </li>
+    <li class="mobile-nav__item">
+      <a href="{{ url_for('products') }}" class="mobile-nav__link">
+        <span class="mobile-nav__icon">▣</span>
+        <span>Товары</span>
+      </a>
+    </li>
+    <li class="mobile-nav__item">
+      <a href="{{ url_for('settings') }}" class="mobile-nav__link">
+        <span class="mobile-nav__icon">⚙</span>
+        <span>Настройки</span>
+      </a>
+    </li>
+  </ul>
+</nav>
+
+<!-- ── Install Banner ─────────────────────────────────────── -->
+<div class="install-banner" id="install-banner">
+  <span class="install-banner__icon">📦</span>
+  <div class="install-banner__text">
+    <strong>Добавить SKLAD на экран</strong>
+    Быстрый доступ без браузера
+  </div>
+  <button class="install-banner__btn" onclick="installPWA()">Установить</button>
+  <button class="install-banner__close" onclick="dismissInstallBanner()" aria-label="Закрыть">×</button>
+</div>
+
+<!-- ── Sidebar Overlay (мобильный) ────────────────────────── -->
+<div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+<!-- ── Mobile JS ──────────────────────────────────────────── -->
+<script src="{{ url_for('static', filename='mobile.js') }}"></script>
+
 </body>
 </html>

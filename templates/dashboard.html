@@ -56,8 +56,8 @@
             {% endif %}
           </td>
           <td class="td-mono text-muted" style="font-size:0.75rem;white-space:nowrap;">
-            {{ op.created_at[:10].replace('-', '.') }}<br>
-            <span style="opacity:0.6;">{{ op.created_at[11:16] }}</span>
+            {{ op.created_at|localdate }}<br>
+            <span style="opacity:0.6;">{{ op.created_at|localtime }}</span>
           </td>
           <td>
             {% for item in items %}

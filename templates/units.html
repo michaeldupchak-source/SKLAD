@@ -75,8 +75,11 @@
                 @click="editId={{ unit.id }}; editName='{{ unit.name | e }}'; editShort='{{ unit.short_name | e }}'">
                 Изменить
               </button>
-              <form method="post" action="{{ url_for('delete_unit', id=unit.id) }}" style="margin:0"
-                onsubmit="return confirm('Удалить «{{ unit.name }}»?')">
+              <form method="post" action="{{ url_for('delete_unit', unit_id=unit.id) }}" style="margin:0"
+                data-confirm-message="Удалить единицу измерения «{{ unit.name }}»?"
+                data-confirm-title="Удалить?"
+                data-confirm-type="danger"
+                data-confirm-ok="Удалить">
                 <button type="submit" class="btn btn-danger btn-sm">✕</button>
               </form>
             </div>

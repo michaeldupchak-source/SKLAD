@@ -1,19 +1,36 @@
 import logging
 import os
 import re
+from dotenv import load_dotenv
+load_dotenv()
 import secrets
 import sqlite3
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from sqlite3 import IntegrityError
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from flask import Flask, render_template, request, redirect, url_for, g, flash
+from flask import Flask, render_template, request, redirect, url_for, g, flash, send_from_directory
 from flask_login import (LoginManager, UserMixin,
                          login_user, logout_user, current_user)
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)s: %(message)s'
+)
 logger = logging.getLogger(__name__)
+
+# ── Password policy ────────────────────────────────────────
+def validate_password(password):
+    """Single source of truth for password rules. Returns error string or None."""
+    if len(password) < 8:
+        return 'Пароль должен содержать не менее 8 символов'
+    if not re.search(r'[A-Za-z]', password):
+        return 'Пароль должен содержать хотя бы одну букву'
+    if not re.search(r'\d', password):
+        return 'Пароль должен содержать хотя бы одну цифру'
+    return None
 
 app = Flask(__name__)
 # Read secret key from environment; fall back to a random key in development.
@@ -25,7 +42,10 @@ else:
     logger.warning("SECRET_KEY not set – using a random key (sessions will not persist across restarts)")
 
 csrf = CSRFProtect(app)
-DB_PATH = "warehouse.db"
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "warehouse.db")
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "uploads")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+ALLOWED_LOGO_EXT = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'}
 
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
@@ -57,7 +77,7 @@ def get_db():
     return g.db
 
 @app.teardown_appcontext
-def close_db(e=None):
+def close_db(_e=None):
     db = g.pop("db", None)
     if db:
         db.close()
@@ -76,10 +96,39 @@ def set_setting(db, key, value):
     db.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?,?)", (key, value))
 
 
+def calc_danger_thresholds(db, mode, weeks):
+    """
+    Returns dict {product_id: avg_weekly_consumption} for all active products.
+    mode: 'recent' — last N weeks only; 'alltime' — all history divided by N weeks.
+    A product is considered dangerous when current_stock < threshold.
+    """
+    weeks = max(1, int(weeks))
+    if mode == 'recent':
+        cutoff = (datetime.now(timezone.utc) - timedelta(weeks=weeks)).strftime('%Y-%m-%d %H:%M:%S')
+        rows = db.execute("""
+            SELECT oi.product_id, COALESCE(SUM(oi.quantity), 0) as total_out
+            FROM operation_items oi
+            JOIN operations o ON o.id = oi.operation_id
+            WHERE o.type = 'OUT' AND o.created_at >= ?
+            GROUP BY oi.product_id
+        """, (cutoff,)).fetchall()
+        return {r['product_id']: r['total_out'] / weeks for r in rows}
+    else:  # alltime
+        rows = db.execute("""
+            SELECT oi.product_id, COALESCE(SUM(oi.quantity), 0) as total_out
+            FROM operation_items oi
+            JOIN operations o ON o.id = oi.operation_id
+            WHERE o.type = 'OUT'
+            GROUP BY oi.product_id
+        """).fetchall()
+        return {r['product_id']: r['total_out'] / weeks for r in rows}
+
+
 def init_db():
     db = sqlite3.connect(DB_PATH)
-    db.execute("PRAGMA foreign_keys = ON")
-    db.executescript("""
+    try:
+        db.execute("PRAGMA foreign_keys = ON")
+        db.executescript("""
     CREATE TABLE IF NOT EXISTS users (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         username      TEXT NOT NULL UNIQUE,
@@ -108,23 +157,43 @@ def init_db():
         category_id INTEGER REFERENCES categories(id),
         unit_id INTEGER REFERENCES units(id),
         description TEXT,
-        current_stock REAL NOT NULL DEFAULT 0
+        current_stock REAL NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS operations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL CHECK(type IN ('IN','OUT')),
+        type TEXT NOT NULL CHECK(type IN ('IN','OUT','ADJUST')),
         created_at TEXT NOT NULL,
         comment TEXT,
         user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
     );
     -- Migration: add user_id to existing installs (safe if column already exists)
     CREATE INDEX IF NOT EXISTS idx_operations_user_id ON operations(user_id);
+    CREATE TABLE IF NOT EXISTS inventory_sessions (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at  TEXT NOT NULL,
+        completed_at TEXT,
+        user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        status      TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','completed'))
+    );
+    CREATE TABLE IF NOT EXISTS inventory_items (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id   INTEGER NOT NULL REFERENCES inventory_sessions(id) ON DELETE CASCADE,
+        product_id   INTEGER NOT NULL REFERENCES products(id),
+        expected_qty REAL NOT NULL,
+        actual_qty   REAL,
+        delta        REAL,
+        reason       TEXT,
+        price        REAL
+    );
     CREATE TABLE IF NOT EXISTS operation_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         operation_id INTEGER NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
         product_id INTEGER NOT NULL REFERENCES products(id),
         quantity REAL NOT NULL,
-        price_per_unit REAL
+        price_per_unit REAL,
+        reason TEXT
     );
     CREATE TABLE IF NOT EXISTS lots (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -145,40 +214,150 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_operations_created_at ON operations(created_at);
     CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
     CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id);
+    CREATE INDEX IF NOT EXISTS idx_op_items_operation_id ON operation_items(operation_id);
+    CREATE INDEX IF NOT EXISTS idx_op_items_product_id ON operation_items(product_id);
+    CREATE INDEX IF NOT EXISTS idx_lots_product_id ON lots(product_id);
+    CREATE INDEX IF NOT EXISTS idx_lots_product_remaining ON lots(product_id, remaining_qty);
+    CREATE TABLE IF NOT EXISTS operation_audit_log (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        operation_id    INTEGER NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+        action          TEXT NOT NULL CHECK(action IN ('created','updated','deleted')),
+        changed_at      TEXT NOT NULL,
+        changed_by_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        changed_by_name TEXT NOT NULL,
+        snapshot        TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_log_operation_id ON operation_audit_log(operation_id);
     """)
-    db.commit()
-    # Runtime migration: add user_id to operations for existing databases
-    existing = [r[1] for r in db.execute("PRAGMA table_info(operations)")]
-    if 'user_id' not in existing:
-        db.execute("ALTER TABLE operations ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
         db.commit()
-    db.close()
+        # Runtime migration: add user_id to operations for existing databases
+        existing = [r[1] for r in db.execute("PRAGMA table_info(operations)")]
+        if 'user_id' not in existing:
+            db.execute("ALTER TABLE operations ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
+            db.commit()
+        # Runtime migration: add is_active to products for existing databases
+        existing_p = [r[1] for r in db.execute("PRAGMA table_info(products)")]
+        if 'is_active' not in existing_p:
+            db.execute("ALTER TABLE products ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+            db.commit()
+        if 'sort_order' not in existing_p:
+            db.execute("ALTER TABLE products ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+            # seed sort_order from current alphabetical order
+            rows = db.execute("SELECT id FROM products ORDER BY name").fetchall()
+            for i, (pid,) in enumerate(rows):
+                db.execute("UPDATE products SET sort_order=? WHERE id=?", (i, pid))
+            db.commit()
+        # Runtime migration: add reason to operation_items
+        existing_oi = [r[1] for r in db.execute("PRAGMA table_info(operation_items)")]
+        if 'reason' not in existing_oi:
+            db.execute("ALTER TABLE operation_items ADD COLUMN reason TEXT")
+            db.commit()
+        # Runtime migration: create inventory tables for existing databases
+        tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if 'inventory_sessions' not in tables:
+            db.execute("""CREATE TABLE inventory_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL, completed_at TEXT,
+                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','completed')))""")
+            db.execute("""CREATE TABLE inventory_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL REFERENCES inventory_sessions(id) ON DELETE CASCADE,
+                product_id INTEGER NOT NULL REFERENCES products(id),
+                expected_qty REAL NOT NULL, actual_qty REAL,
+                delta REAL, reason TEXT, price REAL)""")
+            db.commit()
+        # Runtime migration: create operation_audit_log for existing databases
+        if 'operation_audit_log' not in tables:
+            db.execute("""CREATE TABLE operation_audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                operation_id INTEGER NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+                action TEXT NOT NULL CHECK(action IN ('created','updated','deleted')),
+                changed_at TEXT NOT NULL,
+                changed_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                changed_by_name TEXT NOT NULL,
+                snapshot TEXT NOT NULL)""")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_operation_id ON operation_audit_log(operation_id)")
+            db.commit()
+    finally:
+        db.close()
 
 
 # ── Jinja filter: UTC string → local timezone ──────────────
-@app.template_filter('localdt')
-def local_dt_filter(value, fmt='%d.%m.%Y %H:%M'):
+def _get_local_dt(value):
     if not value:
-        return '—'
-    tz_name = get_setting('timezone', 'UTC')
-    try:
-        tz = ZoneInfo(tz_name)
-    except ZoneInfoNotFoundError:
-        logger.error("Unknown timezone in settings: %r", tz_name)
-        tz = ZoneInfo('UTC')
+        return None
+    if 'cached_tz' not in g:
+        tz_name = get_setting('timezone', 'UTC')
+        try:
+            g.cached_tz = ZoneInfo(tz_name)
+        except ZoneInfoNotFoundError:
+            logger.error("Unknown timezone in settings: %r", tz_name)
+            g.cached_tz = ZoneInfo('UTC')
     try:
         dt = datetime.strptime(str(value)[:19], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
-        return dt.astimezone(tz).strftime(fmt)
+        return dt.astimezone(g.cached_tz)
     except (ValueError, TypeError):
-        return str(value)[:16]
+        return None
+
+@app.template_filter('localdt')
+def local_dt_filter(value, fmt='%d.%m.%Y %H:%M'):
+    dt = _get_local_dt(value)
+    if dt is None:
+        return str(value)[:16] if value else '—'
+    return dt.strftime(fmt)
+
+@app.template_filter('localdate')
+def local_date_filter(value):
+    """Return date only in local timezone: dd.mm.yyyy"""
+    dt = _get_local_dt(value)
+    if dt is None:
+        return str(value)[:10].replace('-', '.') if value else '—'
+    return dt.strftime('%d.%m.%Y')
+
+@app.template_filter('localtime')
+def local_time_filter(value):
+    """Return time only in local timezone: HH:MM"""
+    dt = _get_local_dt(value)
+    if dt is None:
+        return str(value)[11:16] if value else '—'
+    return dt.strftime('%H:%M')
 
 # ── Context processor ──────────────────────────────────────
 @app.context_processor
 def inject_globals():
-    return dict(app_tz=get_setting('timezone', 'UTC'))
+    db = get_db()
+    rows = db.execute(
+        "SELECT key, value FROM app_settings WHERE key IN ('timezone','org_name','org_subtitle','org_logo')"
+    ).fetchall()
+    s = {r['key']: r['value'] for r in rows}
+    org_logo = s.get('org_logo')
+    org_logo_url = url_for('uploaded_file', filename=org_logo) if org_logo else None
+    return dict(
+        app_tz=s.get('timezone', 'UTC'),
+        org_name=s.get('org_name', 'WMS'),
+        org_subtitle=s.get('org_subtitle', 'Складской учёт'),
+        org_logo_url=org_logo_url,
+    )
 
 # ── Auth guard (replaces @login_required on every route) ───
-PUBLIC = {'login', 'setup', 'static'}
+PUBLIC = {'login', 'setup', 'static', 'uploaded_file'}
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
+
+@app.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    safe_name = os.path.basename(filename)
+    if not safe_name or safe_name != filename:
+        from flask import abort
+        abort(403)
+    return send_from_directory(UPLOAD_FOLDER, safe_name)
 
 @app.before_request
 def check_auth():
@@ -209,18 +388,10 @@ def setup():
             error = 'Введите логин и пароль'
         elif password != password2:
             error = 'Пароли не совпадают'
-        elif len(password) < 12:
-            error = 'Пароль должен содержать не менее 12 символов'
-        elif not re.search(r'[A-Z]', password):
-            error = 'Пароль должен содержать хотя бы одну заглавную букву'
-        elif not re.search(r'[a-z]', password):
-            error = 'Пароль должен содержать хотя бы одну строчную букву'
-        elif not re.search(r'\d', password):
-            error = 'Пароль должен содержать хотя бы одну цифру'
-        elif not re.search(r'[!@#$%^&*()_+\-=\[\]{};\'\":,.<>?/\\|`~]', password):
-            error = 'Пароль должен содержать хотя бы один специальный символ'
         else:
-            now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+            error = validate_password(password)
+        if not error:
+            now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
             db.execute(
                 "INSERT INTO users (username, password_hash, role, theme, created_at) VALUES (?,?,?,?,?)",
                 (username, generate_password_hash(password), 'admin', 'dark', now)
@@ -294,13 +465,56 @@ def settings():
 
         if action == 'timezone':
             tz = request.form.get('timezone', 'UTC')
+            try:
+                ZoneInfo(tz)
+            except (ZoneInfoNotFoundError, KeyError):
+                flash('Неизвестный часовой пояс')
+                return redirect(url_for('settings'))
             set_setting(db, 'timezone', tz)
             db.commit()
             flash('Часовой пояс сохранён')
 
+        elif action == 'branding' and current_user.role == 'admin':
+            org_name     = request.form.get('org_name', '').strip()
+            org_subtitle = request.form.get('org_subtitle', '').strip()
+            set_setting(db, 'org_name',     org_name     or 'WMS')
+            set_setting(db, 'org_subtitle', org_subtitle or 'Складской учёт')
+            logo_file = request.files.get('org_logo')
+            if logo_file and logo_file.filename:
+                ext = logo_file.filename.rsplit('.', 1)[-1].lower()
+                if ext in ALLOWED_LOGO_EXT:
+                    # Check file size (max 2 MB)
+                    logo_file.seek(0, 2)
+                    file_size = logo_file.tell()
+                    logo_file.seek(0)
+                    if file_size > 2 * 1024 * 1024:
+                        flash('Файл слишком большой (максимум 2 МБ)')
+                        return redirect(url_for('settings'))
+                    old = get_setting('org_logo')
+                    if old:
+                        try: os.remove(os.path.join(UPLOAD_FOLDER, old))
+                        except OSError: pass
+                    filename = f'org_logo.{ext}'
+                    logo_file.save(os.path.join(UPLOAD_FOLDER, filename))
+                    set_setting(db, 'org_logo', filename)
+                else:
+                    flash('Недопустимый формат (допустимы: png, jpg, gif, webp, svg)')
+                    return redirect(url_for('settings'))
+            db.commit()
+            flash('Настройки организации сохранены')
+
+        elif action == 'delete_logo' and current_user.role == 'admin':
+            old = get_setting('org_logo')
+            if old:
+                try: os.remove(os.path.join(UPLOAD_FOLDER, old))
+                except OSError: pass
+                set_setting(db, 'org_logo', '')
+                db.commit()
+            flash('Логотип удалён')
+
         elif action == 'theme':
-            theme = request.form.get('theme', 'dark')
-            if theme in ('dark', 'light'):
+            theme = request.form.get('theme', 'system')
+            if theme in ('dark', 'light', 'system'):
                 db.execute("UPDATE users SET theme=? WHERE id=?", (theme, current_user.id))
                 db.commit()
             flash('Тема сохранена')
@@ -311,7 +525,7 @@ def settings():
             role     = request.form.get('role', 'user')
             if username and password:
                 try:
-                    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+                    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
                     db.execute(
                         "INSERT INTO users (username, password_hash, role, theme, created_at) VALUES (?,?,?,?,?)",
                         (username, generate_password_hash(password), role, 'dark', now)
@@ -346,25 +560,45 @@ def settings():
                 flash('Неверный текущий пароль')
             elif new != new2:
                 flash('Новые пароли не совпадают')
-            elif len(new) < 4:
-                flash('Пароль слишком короткий (минимум 4 символа)')
             else:
-                db.execute("UPDATE users SET password_hash=? WHERE id=?",
-                           (generate_password_hash(new), current_user.id))
+                pw_error = validate_password(new)
+                if pw_error:
+                    flash(pw_error)
+                else:
+                    db.execute("UPDATE users SET password_hash=? WHERE id=?",
+                               (generate_password_hash(new), current_user.id))
+                    db.commit()
+                    flash('Пароль изменён')
+
+        elif action == 'danger_stock' and current_user.role == 'admin':
+            mode  = request.form.get('danger_stock_mode', 'recent')
+            weeks = request.form.get('danger_stock_weeks', '2')
+            if mode in ('recent', 'alltime') and weeks.isdigit() and 1 <= int(weeks) <= 52:
+                set_setting(db, 'danger_stock_mode',  mode)
+                set_setting(db, 'danger_stock_weeks', weeks)
                 db.commit()
-                flash('Пароль изменён')
+                flash('Настройки опасного остатка сохранены')
+            else:
+                flash('Некорректные значения')
 
         return redirect(url_for('settings'))
 
-    tz_name     = get_setting('timezone', 'UTC')
-    users_list  = db.execute("SELECT * FROM users ORDER BY created_at").fetchall()
-    user_theme  = db.execute("SELECT theme FROM users WHERE id=?",
-                             (current_user.id,)).fetchone()['theme']
+    tz_name      = get_setting('timezone', 'UTC')
+    danger_mode  = get_setting('danger_stock_mode',  'recent')
+    danger_weeks = get_setting('danger_stock_weeks', '2')
+    users_list   = db.execute("SELECT * FROM users ORDER BY created_at").fetchall()
+    user_theme   = db.execute("SELECT theme FROM users WHERE id=?",
+                              (current_user.id,)).fetchone()['theme']
     return render_template('settings.html',
         tz_name=tz_name,
         timezones=COMMON_TIMEZONES,
         users=users_list,
         current_theme=user_theme,
+        danger_mode=danger_mode,
+        danger_weeks=int(danger_weeks),
+        s_org_name=get_setting('org_name', 'WMS'),
+        s_org_subtitle=get_setting('org_subtitle', 'Складской учёт'),
+        s_org_logo=get_setting('org_logo'),
     )
 
 
@@ -409,10 +643,57 @@ def fifo_remove_lot(db, operation_item_id):
         return
     consumed = lot["original_qty"] - lot["remaining_qty"]
     if consumed > 0:
+        # Delete dangling consumptions so FIFO stays consistent
+        db.execute("DELETE FROM lot_consumptions WHERE lot_id=?", (lot["id"],))
         db.execute("UPDATE lots SET remaining_qty=0 WHERE id=?", (lot["id"],))
     else:
         db.execute("DELETE FROM lots WHERE id=?", (lot["id"],))
 
+
+# ── Audit log helpers ──────────────────────────────────────
+import json as _json
+
+def _build_snapshot(db, operation_id):
+    """Return JSON snapshot of an operation + its items (for audit log)."""
+    op = db.execute("SELECT * FROM operations WHERE id=?", (operation_id,)).fetchone()
+    if not op:
+        return _json.dumps({})
+    items = db.execute("""
+        SELECT oi.quantity, oi.price_per_unit, oi.reason,
+               p.name as product_name, u.short_name as unit_short
+        FROM operation_items oi
+        JOIN products p ON p.id = oi.product_id
+        LEFT JOIN units u ON u.id = p.unit_id
+        WHERE oi.operation_id = ?
+        ORDER BY oi.id
+    """, (operation_id,)).fetchall()
+    return _json.dumps({
+        "type":       op["type"],
+        "created_at": op["created_at"],
+        "comment":    op["comment"],
+        "items": [
+            {
+                "product": i["product_name"],
+                "unit":    i["unit_short"] or "",
+                "qty":     i["quantity"],
+                "price":   i["price_per_unit"],
+                "reason":  i["reason"],
+            }
+            for i in items
+        ]
+    }, ensure_ascii=False)
+
+def _write_audit(db, operation_id, action, snapshot=None):
+    """Write one audit log entry. snapshot=None → take it now from DB."""
+    if snapshot is None:
+        snapshot = _build_snapshot(db, operation_id)
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    name = current_user.username if current_user.is_authenticated else 'system'
+    uid  = current_user.id       if current_user.is_authenticated else None
+    db.execute(
+        "INSERT INTO operation_audit_log (operation_id, action, changed_at, changed_by_id, changed_by_name, snapshot) VALUES (?,?,?,?,?,?)",
+        (operation_id, action, now, uid, name, snapshot)
+    )
 
 # ── Root ───────────────────────────────────────────────────
 @app.route("/")
@@ -434,18 +715,18 @@ def create_category():
     db.commit()
     return redirect(url_for("categories"))
 
-@app.route("/categories/<int:id>/update", methods=["POST"])
-def update_category(id):
+@app.route("/categories/<int:cat_id>/update", methods=["POST"])
+def update_category(cat_id):
     db = get_db()
     db.execute("UPDATE categories SET name=?, description=? WHERE id=?",
-               (request.form["name"], request.form.get("description") or None, id))
+               (request.form["name"], request.form.get("description") or None, cat_id))
     db.commit()
     return redirect(url_for("categories"))
 
-@app.route("/categories/<int:id>/delete", methods=["POST"])
-def delete_category(id):
+@app.route("/categories/<int:cat_id>/delete", methods=["POST"])
+def delete_category(cat_id):
     db = get_db()
-    db.execute("DELETE FROM categories WHERE id=?", (id,))
+    db.execute("DELETE FROM categories WHERE id=?", (cat_id,))
     db.commit()
     return redirect(url_for("categories"))
 
@@ -464,18 +745,18 @@ def create_unit():
     db.commit()
     return redirect(url_for("units"))
 
-@app.route("/units/<int:id>/update", methods=["POST"])
-def update_unit(id):
+@app.route("/units/<int:unit_id>/update", methods=["POST"])
+def update_unit(unit_id):
     db = get_db()
     db.execute("UPDATE units SET name=?, short_name=? WHERE id=?",
-               (request.form["name"], request.form["short_name"], id))
+               (request.form["name"], request.form["short_name"], unit_id))
     db.commit()
     return redirect(url_for("units"))
 
-@app.route("/units/<int:id>/delete", methods=["POST"])
-def delete_unit(id):
+@app.route("/units/<int:unit_id>/delete", methods=["POST"])
+def delete_unit(unit_id):
     db = get_db()
-    db.execute("DELETE FROM units WHERE id=?", (id,))
+    db.execute("DELETE FROM units WHERE id=?", (unit_id,))
     db.commit()
     return redirect(url_for("units"))
 
@@ -484,27 +765,31 @@ def delete_unit(id):
 @app.route("/products")
 def products():
     db = get_db()
-    cat_filter = request.args.get("category_id", "")
+    cat_filter    = request.args.get("category_id", "")
+    show_archived = request.args.get("show_archived", "0")
     if cat_filter:
         prods = db.execute("""
             SELECT p.*, c.name as cat_name, u.short_name as unit_short
             FROM products p
             LEFT JOIN categories c ON c.id = p.category_id
             LEFT JOIN units u ON u.id = p.unit_id
-            WHERE p.category_id = ? ORDER BY p.name
-        """, (cat_filter,)).fetchall()
+            WHERE p.category_id = ? AND (p.is_active = 1 OR ? = '1')
+            ORDER BY p.is_active DESC, p.sort_order, p.name
+        """, (cat_filter, show_archived)).fetchall()
     else:
         prods = db.execute("""
             SELECT p.*, c.name as cat_name, u.short_name as unit_short
             FROM products p
             LEFT JOIN categories c ON c.id = p.category_id
             LEFT JOIN units u ON u.id = p.unit_id
-            ORDER BY p.name
-        """).fetchall()
+            WHERE p.is_active = 1 OR ? = '1'
+            ORDER BY p.is_active DESC, p.sort_order, p.name
+        """, (show_archived,)).fetchall()
     cats      = db.execute("SELECT * FROM categories ORDER BY name").fetchall()
     all_units = db.execute("SELECT * FROM units ORDER BY name").fetchall()
     return render_template("products.html", products=prods, categories=cats,
-                           units=all_units, selected_category=cat_filter)
+                           units=all_units, selected_category=cat_filter,
+                           show_archived=show_archived)
 
 @app.route("/products/create", methods=["POST"])
 def create_product():
@@ -517,23 +802,45 @@ def create_product():
     db.commit()
     return redirect(url_for("products"))
 
-@app.route("/products/<int:id>/update", methods=["POST"])
-def update_product(id):
+@app.route("/products/<int:prod_id>/update", methods=["POST"])
+def update_product(prod_id):
     db = get_db()
     db.execute("UPDATE products SET name=?, category_id=?, unit_id=?, description=? WHERE id=?",
                (request.form["name"],
                 request.form.get("category_id") or None,
                 request.form.get("unit_id") or None,
-                request.form.get("description") or None, id))
+                request.form.get("description") or None, prod_id))
     db.commit()
     return redirect(url_for("products"))
 
-@app.route("/products/<int:id>/delete", methods=["POST"])
-def delete_product(id):
+@app.route("/products/<int:prod_id>/delete", methods=["POST"])
+def delete_product(prod_id):
     db = get_db()
-    db.execute("DELETE FROM products WHERE id=?", (id,))
+    db.execute("DELETE FROM products WHERE id=?", (prod_id,))
     db.commit()
     return redirect(url_for("products"))
+
+@app.route("/products/<int:prod_id>/toggle_active", methods=["POST"])
+def toggle_product_active(prod_id):
+    db = get_db()
+    db.execute("UPDATE products SET is_active = 1 - is_active WHERE id=?", (prod_id,))
+    db.commit()
+    return redirect(request.referrer or url_for("products"))
+
+@app.route("/products/reorder", methods=["POST"])
+def reorder_products():
+    from flask import abort
+    order = request.json.get("order", [])   # list of product ids in new order
+    db = get_db()
+    if not isinstance(order, list):
+        abort(400)
+    valid_ids = {row['id'] for row in db.execute("SELECT id FROM products").fetchall()}
+    if not all(isinstance(pid, int) and pid in valid_ids for pid in order):
+        abort(400)
+    for i, pid in enumerate(order):
+        db.execute("UPDATE products SET sort_order=? WHERE id=?", (i, pid))
+    db.commit()
+    return {"ok": True}
 
 
 # ── Operations: new ────────────────────────────────────────
@@ -542,24 +849,28 @@ def new_operation():
     db = get_db()
     prods = db.execute("""
         SELECT p.*, u.short_name as unit_short FROM products p
-        LEFT JOIN units u ON u.id = p.unit_id ORDER BY p.name
+        LEFT JOIN units u ON u.id = p.unit_id
+        WHERE p.is_active = 1 ORDER BY p.sort_order, p.name
     """).fetchall()
     stock_map = {str(p["id"]): float(p["current_stock"]) for p in prods}
     return render_template("operation_new.html", products=prods, stock_map=stock_map)
 
 @app.route("/operations/create", methods=["POST"])
 def create_operation():
+    from flask import abort
     db   = get_db()
     op_type = request.form.get("type", "IN")
+    if op_type not in ("IN", "OUT", "ADJUST"):
+        abort(400)
     comment = request.form.get("comment") or None
     dt_str  = request.form.get("created_at", "")
     if dt_str:
         try:
             created_at = datetime.strptime(dt_str, "%Y-%m-%dT%H:%M").strftime("%Y-%m-%d %H:%M:%S")
-        except Exception:
-            created_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            created_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     else:
-        created_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        created_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     product_ids = request.form.getlist("product_id[]")
     quantities  = request.form.getlist("quantity[]")
@@ -569,18 +880,153 @@ def create_operation():
     for i, pid in enumerate(product_ids):
         if not pid or i >= len(quantities) or not quantities[i]:
             continue
-        raw_qty = float(quantities[i])
-        qty = int(raw_qty)  # enforce integer quantity
-        if qty < 1:
+        try:
+            raw_qty = float(quantities[i])
+        except (ValueError, TypeError):
             continue
-        price = float(prices[i]) if i < len(prices) and prices[i] else None
+        qty = int(raw_qty)
+        if qty < 1 or qty > 1_000_000:
+            flash('Некорректное количество товара')
+            return redirect(url_for('new_operation'))
+        price = None
+        if i < len(prices) and prices[i]:
+            try:
+                price = float(prices[i])
+                if price < 0 or price > 100_000_000:
+                    flash('Некорректная цена товара')
+                    return redirect(url_for('new_operation'))
+            except (ValueError, TypeError):
+                price = None
         items.append((int(pid), qty, price))
 
     if items:
-        cur   = db.execute("INSERT INTO operations (type, created_at, comment, user_id) VALUES (?,?,?,?)",
-                           (op_type, created_at, comment, current_user.id))
-        op_id = cur.lastrowid
-        for pid, qty, price in items:
+        try:
+            db.execute("BEGIN")
+            # Pre-check stock for OUT operations
+            if op_type == "OUT":
+                for pid, qty, price in items:
+                    row = db.execute("SELECT current_stock, name FROM products WHERE id=?", (pid,)).fetchone()
+                    if row and row['current_stock'] < qty:
+                        db.execute("ROLLBACK")
+                        flash(f'Недостаточно товара «{row["name"]}» на складе (доступно: {row["current_stock"]})')
+                        return redirect(url_for('new_operation'))
+            cur   = db.execute("INSERT INTO operations (type, created_at, comment, user_id) VALUES (?,?,?,?)",
+                               (op_type, created_at, comment, current_user.id))
+            op_id = cur.lastrowid
+            for pid, qty, price in items:
+                if op_type == "OUT":
+                    item_cur  = db.execute(
+                        "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit) VALUES (?,?,?,NULL)",
+                        (op_id, pid, qty))
+                    item_id   = item_cur.lastrowid
+                    fifo_price = fifo_consume(db, pid, qty, item_id)
+                    if fifo_price is not None:
+                        db.execute("UPDATE operation_items SET price_per_unit=? WHERE id=?",
+                                   (round(fifo_price, 6), item_id))
+                else:
+                    item_cur = db.execute(
+                        "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit) VALUES (?,?,?,?)",
+                        (op_id, pid, qty, price))
+                    item_id  = item_cur.lastrowid
+                    fifo_add_lot(db, pid, item_id, price, qty, created_at)
+                if op_type == "IN":
+                    db.execute("UPDATE products SET current_stock = current_stock + ? WHERE id=?", (qty, pid))
+                else:
+                    db.execute("UPDATE products SET current_stock = current_stock - ? WHERE id=?", (qty, pid))
+            db.execute("COMMIT")
+            _write_audit(db, op_id, 'created')
+            db.commit()
+        except Exception as e:
+            db.execute("ROLLBACK")
+            logger.exception("create_operation failed: %s", e)
+            flash('Ошибка при создании операции. Изменения отменены.')
+            return redirect(url_for('new_operation'))
+    return redirect(url_for("history"))
+
+
+# ── Operations: edit / delete ──────────────────────────────
+@app.route("/operations/<int:op_id>/edit")
+def edit_operation(op_id):
+    db = get_db()
+    op = db.execute("SELECT * FROM operations WHERE id=?", (op_id,)).fetchone()
+    if not op:
+        return redirect(url_for("history"))
+    items = db.execute("""
+        SELECT oi.*, p.name as product_name, u.short_name as unit_short
+        FROM operation_items oi
+        JOIN products p ON p.id = oi.product_id
+        LEFT JOIN units u ON u.id = p.unit_id
+        WHERE oi.operation_id = ?
+    """, (op_id,)).fetchall()
+    prods     = db.execute("""
+        SELECT p.*, u.short_name as unit_short FROM products p
+        LEFT JOIN units u ON u.id = p.unit_id
+        WHERE p.is_active = 1 ORDER BY p.sort_order, p.name
+    """).fetchall()
+    stock_map = {str(p["id"]): float(p["current_stock"]) for p in prods}
+    return render_template("operation_edit.html", op=op, items=items,
+                           products=prods, stock_map=stock_map)
+
+@app.route("/operations/<int:op_id>/update", methods=["POST"])
+def update_operation(op_id):
+    from flask import abort
+    db = get_db()
+    op = db.execute("SELECT * FROM operations WHERE id=?", (op_id,)).fetchone()
+    if not op:
+        return redirect(url_for("history"))
+    op_type = request.form.get("type", op["type"])
+    if op_type not in ("IN", "OUT", "ADJUST"):
+        abort(400)
+    comment = request.form.get("comment") or None
+    dt_str  = request.form.get("created_at", "")
+    if dt_str:
+        try:
+            created_at = datetime.strptime(dt_str, "%Y-%m-%dT%H:%M").strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            created_at = op["created_at"]
+    else:
+        created_at = op["created_at"]
+
+    product_ids = request.form.getlist("product_id[]")
+    quantities  = request.form.getlist("quantity[]")
+    prices      = request.form.getlist("price_per_unit[]")
+
+    new_items = []
+    for i, pid in enumerate(product_ids):
+        if not pid or i >= len(quantities) or not quantities[i]:
+            continue
+        try:
+            qty = int(float(quantities[i]))
+        except (ValueError, TypeError):
+            continue
+        if qty < 1:
+            continue
+        price = None
+        if i < len(prices) and prices[i]:
+            try:
+                price = float(prices[i])
+            except (ValueError, TypeError):
+                price = None
+        new_items.append((int(pid), qty, price))
+
+    try:
+        db.execute("BEGIN")
+        # Snapshot BEFORE changes — stored as "before" in audit
+        before_snapshot = _build_snapshot(db, op_id)
+        old_items = db.execute("SELECT * FROM operation_items WHERE operation_id=?", (op_id,)).fetchall()
+        for item in old_items:
+            if op["type"] == "IN":
+                fifo_remove_lot(db, item["id"])
+                db.execute("UPDATE products SET current_stock = current_stock - ? WHERE id=?",
+                           (item["quantity"], item["product_id"]))
+            else:
+                fifo_restore(db, item["id"])
+                db.execute("UPDATE products SET current_stock = current_stock + ? WHERE id=?",
+                           (item["quantity"], item["product_id"]))
+        db.execute("DELETE FROM operation_items WHERE operation_id=?", (op_id,))
+        db.execute("UPDATE operations SET type=?, created_at=?, comment=? WHERE id=?",
+                   (op_type, created_at, comment, op_id))
+        for pid, qty, price in new_items:
             if op_type == "OUT":
                 item_cur  = db.execute(
                     "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit) VALUES (?,?,?,NULL)",
@@ -600,40 +1046,34 @@ def create_operation():
                 db.execute("UPDATE products SET current_stock = current_stock + ? WHERE id=?", (qty, pid))
             else:
                 db.execute("UPDATE products SET current_stock = current_stock - ? WHERE id=?", (qty, pid))
+        db.execute("COMMIT")
+        # Write audit after commit — after snapshot is fresh
+        after_snapshot = _build_snapshot(db, op_id)
+        combined = _json.dumps({
+            "before": _json.loads(before_snapshot),
+            "after":  _json.loads(after_snapshot)
+        }, ensure_ascii=False)
+        _write_audit(db, op_id, 'updated', snapshot=combined)
         db.commit()
+    except Exception as e:
+        db.execute("ROLLBACK")
+        logger.exception("update_operation failed: %s", e)
+        flash('Ошибка при обновлении операции. Изменения отменены.')
+        return redirect(url_for('edit_operation', op_id=op_id))
     return redirect(url_for("history"))
 
-
-# ── Operations: edit / delete ──────────────────────────────
-@app.route("/operations/<int:id>/edit")
-def edit_operation(id):
+@app.route("/operations/<int:op_id>/delete", methods=["POST"])
+def delete_operation(op_id):
     db = get_db()
-    op = db.execute("SELECT * FROM operations WHERE id=?", (id,)).fetchone()
+    op = db.execute("SELECT * FROM operations WHERE id=?", (op_id,)).fetchone()
     if not op:
         return redirect(url_for("history"))
-    items = db.execute("""
-        SELECT oi.*, p.name as product_name, u.short_name as unit_short
-        FROM operation_items oi
-        JOIN products p ON p.id = oi.product_id
-        LEFT JOIN units u ON u.id = p.unit_id
-        WHERE oi.operation_id = ?
-    """, (id,)).fetchall()
-    prods     = db.execute("""
-        SELECT p.*, u.short_name as unit_short FROM products p
-        LEFT JOIN units u ON u.id = p.unit_id ORDER BY p.name
-    """).fetchall()
-    stock_map = {str(p["id"]): float(p["current_stock"]) for p in prods}
-    return render_template("operation_edit.html", op=op, items=items,
-                           products=prods, stock_map=stock_map)
-
-@app.route("/operations/<int:id>/update", methods=["POST"])
-def update_operation(id):
-    db = get_db()
-    op = db.execute("SELECT * FROM operations WHERE id=?", (id,)).fetchone()
-    if not op:
-        return redirect(url_for("history"))
-    old_items = db.execute("SELECT * FROM operation_items WHERE operation_id=?", (id,)).fetchall()
-    for item in old_items:
+    # Snapshot before deletion (audit log row survives via ON DELETE CASCADE on operation_id,
+    # but we still store the final state so it's readable even after the op is gone)
+    before_snapshot = _build_snapshot(db, op_id)
+    _write_audit(db, op_id, 'deleted', snapshot=before_snapshot)
+    db.commit()
+    for item in db.execute("SELECT * FROM operation_items WHERE operation_id=?", (op_id,)).fetchall():
         if op["type"] == "IN":
             fifo_remove_lot(db, item["id"])
             db.execute("UPDATE products SET current_stock = current_stock - ? WHERE id=?",
@@ -642,70 +1082,30 @@ def update_operation(id):
             fifo_restore(db, item["id"])
             db.execute("UPDATE products SET current_stock = current_stock + ? WHERE id=?",
                        (item["quantity"], item["product_id"]))
-    db.execute("DELETE FROM operation_items WHERE operation_id=?", (id,))
-    op_type = request.form.get("type", op["type"])
-    comment = request.form.get("comment") or None
-    dt_str  = request.form.get("created_at", "")
-    if dt_str:
-        try:
-            created_at = datetime.strptime(dt_str, "%Y-%m-%dT%H:%M").strftime("%Y-%m-%d %H:%M:%S")
-        except Exception:
-            created_at = op["created_at"]
-    else:
-        created_at = op["created_at"]
-    db.execute("UPDATE operations SET type=?, created_at=?, comment=? WHERE id=?",
-               (op_type, created_at, comment, id))
-    product_ids = request.form.getlist("product_id[]")
-    quantities  = request.form.getlist("quantity[]")
-    prices      = request.form.getlist("price_per_unit[]")
-    for i, pid in enumerate(product_ids):
-        if not pid or i >= len(quantities) or not quantities[i]:
-            continue
-        qty = int(float(quantities[i]))  # enforce integer quantity
-        if qty < 1:
-            continue
-        price = float(prices[i]) if i < len(prices) and prices[i] else None
-        if op_type == "OUT":
-            item_cur  = db.execute(
-                "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit) VALUES (?,?,?,NULL)",
-                (id, int(pid), qty))
-            item_id   = item_cur.lastrowid
-            fifo_price = fifo_consume(db, int(pid), qty, item_id)
-            if fifo_price is not None:
-                db.execute("UPDATE operation_items SET price_per_unit=? WHERE id=?",
-                           (round(fifo_price, 6), item_id))
-        else:
-            item_cur = db.execute(
-                "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit) VALUES (?,?,?,?)",
-                (id, int(pid), qty, price))
-            item_id  = item_cur.lastrowid
-            fifo_add_lot(db, int(pid), item_id, price, qty, created_at)
-        if op_type == "IN":
-            db.execute("UPDATE products SET current_stock = current_stock + ? WHERE id=?", (qty, int(pid)))
-        else:
-            db.execute("UPDATE products SET current_stock = current_stock - ? WHERE id=?", (qty, int(pid)))
+    db.execute("DELETE FROM operations WHERE id=?", (op_id,))
     db.commit()
     return redirect(url_for("history"))
 
-@app.route("/operations/<int:id>/delete", methods=["POST"])
-def delete_operation(id):
+
+# ── Operation audit log API ────────────────────────────────
+@app.route("/operations/<int:op_id>/audit")
+def operation_audit(op_id):
     db = get_db()
-    op = db.execute("SELECT * FROM operations WHERE id=?", (id,)).fetchone()
-    if not op:
-        return redirect(url_for("history"))
-    for item in db.execute("SELECT * FROM operation_items WHERE operation_id=?", (id,)).fetchall():
-        if op["type"] == "IN":
-            fifo_remove_lot(db, item["id"])
-            db.execute("UPDATE products SET current_stock = current_stock - ? WHERE id=?",
-                       (item["quantity"], item["product_id"]))
-        else:
-            fifo_restore(db, item["id"])
-            db.execute("UPDATE products SET current_stock = current_stock + ? WHERE id=?",
-                       (item["quantity"], item["product_id"]))
-    db.execute("DELETE FROM operations WHERE id=?", (id,))
-    db.commit()
-    return redirect(url_for("history"))
-
+    rows = db.execute("""
+        SELECT action, changed_at, changed_by_name, snapshot
+        FROM operation_audit_log
+        WHERE operation_id = ?
+        ORDER BY id ASC
+    """, (op_id,)).fetchall()
+    result = []
+    for r in rows:
+        result.append({
+            "action":     r["action"],
+            "changed_at": r["changed_at"],
+            "by":         r["changed_by_name"],
+            "snapshot":   _json.loads(r["snapshot"])
+        })
+    return _json.dumps(result, ensure_ascii=False), 200, {"Content-Type": "application/json"}
 
 # ── Stats detail ───────────────────────────────────────────
 @app.route("/stats/detail")
@@ -717,7 +1117,7 @@ def stats_detail():
     date_to     = request.args.get("date_to", "")
     preset      = request.args.get("preset", "")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if preset == "today":
         date_from = now.strftime("%Y-%m-%d")
         date_to = now.strftime("%Y-%m-%d")
@@ -753,10 +1153,18 @@ def stats_detail():
         op_conditions.append("o.created_at <= ?"); op_params.append(date_to + " 23:59:59")
     op_where = " AND ".join(op_conditions)
 
+    # Build explicit filters per subject type — no fragile string replacement
     if subject_type == "product":
-        prod_filter = "AND oi.product_id = ?"; prod_params = [int(product_id)]
+        pid_int = int(product_id)
+        # Filter for JOIN on operation_items and for WHERE on products
+        oi_filter  = "AND oi.product_id = ?"
+        p_filter   = "AND p.id = ?"
+        prod_param = pid_int
     else:
-        prod_filter = "AND p.category_id = ?"; prod_params = [int(category_id)]
+        cat_int    = int(category_id)
+        oi_filter  = "AND p.category_id = ?"
+        p_filter   = "AND p.category_id = ?"
+        prod_param = cat_int
 
     rows = db.execute(f"""
         SELECT p.id, p.name as product_name, u.short_name as unit_short, p.current_stock,
@@ -766,19 +1174,19 @@ def stats_detail():
             COALESCE(SUM(CASE WHEN o.type='OUT' THEN oi.quantity*COALESCE(oi.price_per_unit,0) ELSE 0 END),0) as out_total
         FROM products p
         LEFT JOIN units u ON u.id = p.unit_id
-        LEFT JOIN operation_items oi ON oi.product_id = p.id {prod_filter}
+        LEFT JOIN operation_items oi ON oi.product_id = p.id {oi_filter}
         LEFT JOIN operations o ON o.id = oi.operation_id AND {op_where}
-        WHERE 1=1 {prod_filter.replace('AND oi.product_id','AND p.id').replace('AND p.category_id','AND p.category_id')}
-        GROUP BY p.id ORDER BY p.name
-    """, prod_params + op_params + prod_params).fetchall()
+        WHERE 1=1 {p_filter}
+        GROUP BY p.id ORDER BY p.sort_order, p.name
+    """, [prod_param] + op_params + [prod_param]).fetchall()
 
     ops_raw = db.execute(f"""
         SELECT DISTINCT o.* FROM operations o
         JOIN operation_items oi ON oi.operation_id = o.id
         JOIN products p ON p.id = oi.product_id
-        WHERE {op_where} {prod_filter}
+        WHERE {op_where} {oi_filter}
         ORDER BY o.created_at DESC LIMIT 50
-    """, op_params + prod_params).fetchall()
+    """, op_params + [prod_param]).fetchall()
 
     ops_with_items = []
     for op in ops_raw:
@@ -797,11 +1205,11 @@ def stats_detail():
             SUM(CASE WHEN o.type='OUT' THEN oi.quantity*COALESCE(oi.price_per_unit,0) ELSE 0 END) as out_total
         FROM operations o JOIN operation_items oi ON oi.operation_id=o.id
         JOIN products p ON p.id=oi.product_id
-        WHERE o.created_at >= date('now','-12 months') {prod_filter}
+        WHERE o.created_at >= date('now','-12 months') {oi_filter}
         GROUP BY month ORDER BY month
-    """, prod_params).fetchall()
+    """, [prod_param]).fetchall()
 
-    all_products   = db.execute("SELECT id, name FROM products ORDER BY name").fetchall()
+    all_products   = db.execute("SELECT id, name FROM products WHERE is_active=1 ORDER BY sort_order, name").fetchall()
     all_categories = db.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
     return render_template("stats_detail.html",
         subject=subject, subject_type=subject_type, rows=rows, ops=ops_with_items,
@@ -825,7 +1233,10 @@ def history():
     op_type    = request.args.get("op_type", "")
     product_id = request.args.get("product_id", "")
     user_id    = request.args.get("user_id", "")
-    page       = int(request.args.get("page", 1))
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (ValueError, TypeError):
+        page = 1
     limit      = 20
     offset     = (page - 1) * limit
 
@@ -834,7 +1245,7 @@ def history():
         conditions.append("o.created_at >= ?"); params.append(date_from)
     if date_to:
         conditions.append("o.created_at <= ?"); params.append(date_to + " 23:59:59")
-    if op_type in ("IN", "OUT"):
+    if op_type in ("IN", "OUT", "ADJUST"):
         conditions.append("o.type = ?"); params.append(op_type)
     if product_id:
         conditions.append("EXISTS (SELECT 1 FROM operation_items oi WHERE oi.operation_id=o.id AND oi.product_id=?)")
@@ -853,15 +1264,36 @@ def history():
     ).fetchall()
 
     ops_with_items = []
-    for op in ops:
-        items = db.execute("""
+    if ops:
+        op_ids = [op["id"] for op in ops]
+        placeholders = ','.join('?' * len(op_ids))
+        all_items = db.execute(f"""
             SELECT oi.*, p.name as product_name, u.short_name as unit_short
-            FROM operation_items oi JOIN products p ON p.id=oi.product_id
-            LEFT JOIN units u ON u.id=p.unit_id WHERE oi.operation_id=?
-        """, (op["id"],)).fetchall()
-        ops_with_items.append({"op": op, "items": items})
+            FROM operation_items oi
+            JOIN products p ON p.id = oi.product_id
+            LEFT JOIN units u ON u.id = p.unit_id
+            WHERE oi.operation_id IN ({placeholders})
+        """, op_ids).fetchall()
+        items_by_op = {}
+        for item in all_items:
+            items_by_op.setdefault(item["operation_id"], []).append(item)
+        # Audit log counts per operation (single query)
+        audit_counts = {}
+        for row in db.execute(f"""
+            SELECT operation_id, COUNT(*) as cnt
+            FROM operation_audit_log
+            WHERE operation_id IN ({placeholders})
+            GROUP BY operation_id
+        """, op_ids).fetchall():
+            audit_counts[row["operation_id"]] = row["cnt"]
+        for op in ops:
+            ops_with_items.append({
+                "op":          op,
+                "items":       items_by_op.get(op["id"], []),
+                "audit_count": audit_counts.get(op["id"], 0),
+            })
 
-    all_products = db.execute("SELECT id, name FROM products ORDER BY name").fetchall()
+    all_products = db.execute("SELECT id, name FROM products WHERE is_active=1 ORDER BY sort_order, name").fetchall()
     all_users    = db.execute("SELECT id, username FROM users ORDER BY username").fetchall()
     pages   = (total + limit - 1) // limit
     filters = {"date_from": date_from, "date_to": date_to,
@@ -877,7 +1309,7 @@ def stats():
     date_to   = request.args.get("date_to", "")
     preset    = request.args.get("preset", "")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if preset == "today":
         date_from = now.strftime("%Y-%m-%d")
         date_to = now.strftime("%Y-%m-%d")
@@ -908,10 +1340,10 @@ def stats():
         LEFT JOIN units u ON u.id=p.unit_id
         LEFT JOIN operation_items oi ON oi.product_id=p.id
         LEFT JOIN operations o ON o.id=oi.operation_id {op_where}
-        GROUP BY p.id, p.name, u.short_name, p.current_stock ORDER BY p.name
+        GROUP BY p.id, p.name, u.short_name, p.current_stock ORDER BY p.sort_order, p.name
     """, op_params).fetchall()
 
-    all_products   = db.execute("SELECT id, name FROM products ORDER BY name").fetchall()
+    all_products   = db.execute("SELECT id, name FROM products WHERE is_active=1 ORDER BY sort_order, name").fetchall()
     all_categories = db.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
     return render_template("stats.html", rows=rows,
         total_in_qty=sum(r["in_qty"] for r in rows),
@@ -939,9 +1371,10 @@ def stock():
         where_parts.append("p.current_stock > 0")
     elif show == "out_of_stock":
         where_parts.append("p.current_stock <= 0")
-    where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+    where_parts.append("p.is_active = 1")
+    where = "WHERE " + " AND ".join(where_parts)
 
-    products = db.execute(f"""
+    stock_rows = db.execute(f"""
         SELECT p.*, c.name as cat_name, u.short_name as unit_short,
             (SELECT oi.price_per_unit FROM operation_items oi
              JOIN operations o ON o.id=oi.operation_id
@@ -959,25 +1392,314 @@ def stock():
         FROM products p
         LEFT JOIN categories c ON c.id=p.category_id
         LEFT JOIN units u ON u.id=p.unit_id
-        {where} ORDER BY p.name
+        {where} ORDER BY p.sort_order, p.name
     """, params).fetchall()
 
-    categories       = db.execute("SELECT * FROM categories ORDER BY name").fetchall()
-    in_stock_count   = sum(1 for p in products if p["current_stock"] > 0)
-    out_stock_count  = sum(1 for p in products if p["current_stock"] <= 0)
+    cat_rows         = db.execute("SELECT * FROM categories ORDER BY name").fetchall()
+    in_stock_count   = sum(1 for p in stock_rows if p["current_stock"] > 0)
+    out_stock_count  = sum(1 for p in stock_rows if p["current_stock"] <= 0)
     total_stock_value = sum(
         p["current_stock"] * p["last_price"]
-        for p in products if p["current_stock"] > 0 and p["last_price"]
+        for p in stock_rows if p["current_stock"] > 0 and p["last_price"]
     )
+    danger_mode  = get_setting('danger_stock_mode',  'recent')
+    danger_weeks = get_setting('danger_stock_weeks', '2')
+    danger_thresholds = calc_danger_thresholds(db, danger_mode, danger_weeks)
+
     return render_template("stock.html",
-        products=products, categories=categories,
-        total_items=len(products),
+        products=stock_rows, categories=cat_rows,
+        total_items=len(stock_rows),
         in_stock_count=in_stock_count,
         out_of_stock_count=out_stock_count,
         total_stock_value=total_stock_value,
+        danger_thresholds=danger_thresholds,
+        danger_weeks=int(danger_weeks),
         filters={"category_id": category_id, "search": search, "show": show})
+
+@app.route("/stock/print")
+def stock_print():
+    db          = get_db()
+    category_id = request.args.get("category_id", "")
+    search      = request.args.get("search", "").strip()
+    show        = request.args.get("show", "all")
+
+    where_parts, params = [], []
+    if category_id:
+        where_parts.append("p.category_id = ?"); params.append(category_id)
+    if search:
+        where_parts.append("p.name LIKE ?"); params.append(f"%{search}%")
+    if show == "in_stock":
+        where_parts.append("p.current_stock > 0")
+    elif show == "out_of_stock":
+        where_parts.append("p.current_stock <= 0")
+    where_parts.append("p.is_active = 1")
+    where = "WHERE " + " AND ".join(where_parts)
+
+    stock_rows = db.execute(f"""
+        SELECT p.*, c.name as cat_name, u.short_name as unit_short
+        FROM products p
+        LEFT JOIN categories c ON c.id=p.category_id
+        LEFT JOIN units u ON u.id=p.unit_id
+        {where} ORDER BY p.sort_order, p.name
+    """, params).fetchall()
+
+    now = datetime.now(timezone.utc).strftime("%d.%m.%Y %H:%M")
+    return render_template("stock_print.html", products=stock_rows, now=now,
+                           filters={"category_id": category_id, "search": search, "show": show})
+
+
+# ── Inventory ─────────────────────────────────────────────────────────────────
+
+@app.route("/inventory")
+def inventory():
+    db = get_db()
+    sessions = db.execute("""
+        SELECT s.*, u.username
+        FROM inventory_sessions s
+        LEFT JOIN users u ON u.id = s.user_id
+        ORDER BY s.created_at DESC
+    """).fetchall()
+    return render_template("inventory.html", sessions=sessions)
+
+
+@app.route("/inventory/new", methods=["POST"])
+def inventory_new():
+    db  = get_db()
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    # Only one draft per user allowed
+    existing = db.execute(
+        "SELECT id FROM inventory_sessions WHERE status='draft' AND user_id=?",
+        (current_user.id,)
+    ).fetchone()
+    if existing:
+        return redirect(url_for('inventory_session', inv_id=existing['id']))
+    cur = db.execute(
+        "INSERT INTO inventory_sessions (created_at, user_id, status) VALUES (?,?,'draft')",
+        (now, current_user.id)
+    )
+    session_id = cur.lastrowid
+    # Snapshot current stock for all active products
+    active_products = db.execute(
+        "SELECT id, current_stock FROM products WHERE is_active=1 ORDER BY sort_order, name"
+    ).fetchall()
+    for p in active_products:
+        # Last IN price for financial evaluation
+        price_row = db.execute("""
+            SELECT oi.price_per_unit FROM operation_items oi
+            JOIN operations o ON o.id = oi.operation_id
+            WHERE oi.product_id = ? AND o.type = 'IN' AND oi.price_per_unit IS NOT NULL
+            ORDER BY o.created_at DESC LIMIT 1
+        """, (p['id'],)).fetchone()
+        price = price_row['price_per_unit'] if price_row else None
+        db.execute(
+            "INSERT INTO inventory_items (session_id, product_id, expected_qty, price) VALUES (?,?,?,?)",
+            (session_id, p['id'], p['current_stock'], price)
+        )
+    db.commit()
+    return redirect(url_for('inventory_session', inv_id=session_id))
+
+
+ADJUST_REASONS = [
+    ('accounting', 'Ошибка учёта'),
+    ('writeoff',   'Списание (физическая потеря)'),
+    ('regrade',    'Пересортица'),
+    ('theft',      'Кража'),
+]
+
+@app.route("/inventory/<int:inv_id>", methods=["GET", "POST"])
+def inventory_session(inv_id):
+    db = get_db()
+    session = db.execute("SELECT * FROM inventory_sessions WHERE id=?", (inv_id,)).fetchone()
+    if not session:
+        return "Сессия не найдена", 404
+
+    if request.method == "POST" and session['status'] == 'draft':
+        items_db = db.execute(
+            "SELECT * FROM inventory_items WHERE session_id=?", (inv_id,)
+        ).fetchall()
+        for item in items_db:
+            actual_raw = request.form.get(f"actual_{item['id']}", "").strip()
+            reason     = request.form.get(f"reason_{item['id']}", "")
+            price_raw  = request.form.get(f"price_{item['id']}", "").strip()
+            if actual_raw == "":
+                continue
+            try:
+                actual = float(actual_raw)
+            except ValueError:
+                continue
+            delta = actual - item['expected_qty']
+            price = item['price']
+            if price_raw:
+                try:
+                    price = float(price_raw)
+                except ValueError:
+                    pass
+            db.execute("""
+                UPDATE inventory_items
+                SET actual_qty=?, delta=?, reason=?, price=?
+                WHERE id=?
+            """, (actual, delta, reason, price, item['id']))
+        db.commit()
+
+        save_action = request.form.get("save_action", "save")
+        if save_action == "complete":
+            try:
+                db.execute("BEGIN IMMEDIATE")
+                # Re-check status inside transaction to prevent race condition
+                live_status = db.execute(
+                    "SELECT status FROM inventory_sessions WHERE id=?", (inv_id,)
+                ).fetchone()
+                if not live_status or live_status['status'] != 'draft':
+                    db.execute("ROLLBACK")
+                    flash("Инвентаризация уже завершена или не существует")
+                    return redirect(url_for('inventory'))
+                items_to_apply = db.execute(
+                    "SELECT * FROM inventory_items WHERE session_id=? AND actual_qty IS NOT NULL AND delta != 0",
+                    (inv_id,)
+                ).fetchall()
+                if items_to_apply:
+                    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+                    cur = db.execute(
+                        "INSERT INTO operations (type, created_at, comment, user_id) VALUES ('ADJUST',?,?,?)",
+                        (now, f"Инвентаризация #{inv_id}", current_user.id)
+                    )
+                    op_id = cur.lastrowid
+                    for item in items_to_apply:
+                        db.execute(
+                            "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit, reason) VALUES (?,?,?,?,?)",
+                            (op_id, item['product_id'], abs(item['delta']), item['price'] or 0, item['reason'])
+                        )
+                        db.execute(
+                            "UPDATE products SET current_stock = current_stock + ? WHERE id=?",
+                            (item['delta'], item['product_id'])
+                        )
+                now2 = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+                db.execute("UPDATE inventory_sessions SET status='completed', completed_at=? WHERE id=?", (now2, inv_id))
+                db.execute("COMMIT")
+                flash(f"Инвентаризация завершена. Скорректировано позиций: {len(items_to_apply)}")
+            except Exception as e:
+                db.execute("ROLLBACK")
+                logger.exception("inventory_session complete failed: %s", e)
+                flash("Ошибка при завершении инвентаризации.")
+            return redirect(url_for('inventory'))
+
+        flash("Данные сохранены")
+        return redirect(url_for('inventory_session', inv_id=inv_id))
+
+    items = db.execute("""
+        SELECT ii.*, p.name as product_name, u.short_name as unit_short
+        FROM inventory_items ii
+        JOIN products p ON p.id = ii.product_id
+        LEFT JOIN units u ON u.id = p.unit_id
+        WHERE ii.session_id = ?
+        ORDER BY p.sort_order, p.name
+    """, (inv_id,)).fetchall()
+    return render_template("inventory_session.html",
+                           session=session, items=items, reasons=ADJUST_REASONS)
+
+
+@app.route("/inventory/<int:inv_id>/complete", methods=["POST"])
+def inventory_complete(inv_id):
+    from flask import abort
+    db = get_db()
+    session = db.execute("SELECT * FROM inventory_sessions WHERE id=?", (inv_id,)).fetchone()
+    if not session:
+        return redirect(url_for('inventory'))
+    # Access control: only owner or admin
+    if session['user_id'] != current_user.id and current_user.role != 'admin':
+        abort(403)
+    if session['status'] != 'draft':
+        flash("Инвентаризация уже завершена")
+        return redirect(url_for('inventory'))
+
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        # Re-check inside transaction
+        live = db.execute(
+            "SELECT status FROM inventory_sessions WHERE id=?", (inv_id,)
+        ).fetchone()
+        if not live or live['status'] != 'draft':
+            db.execute("ROLLBACK")
+            flash("Инвентаризация уже завершена")
+            return redirect(url_for('inventory'))
+
+        items = db.execute(
+            "SELECT * FROM inventory_items WHERE session_id=? AND actual_qty IS NOT NULL AND delta != 0",
+            (inv_id,)
+        ).fetchall()
+
+        if items:
+            now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+            cur = db.execute(
+                "INSERT INTO operations (type, created_at, comment, user_id) VALUES ('ADJUST',?,?,?)",
+                (now, f"Инвентаризация #{inv_id}", current_user.id)
+            )
+            op_id = cur.lastrowid
+            for item in items:
+                delta = item['delta']
+                price = item['price'] or 0
+                db.execute(
+                    "INSERT INTO operation_items (operation_id, product_id, quantity, price_per_unit) VALUES (?,?,?,?)",
+                    (op_id, item['product_id'], abs(delta), price)
+                )
+                db.execute(
+                    "UPDATE products SET current_stock = current_stock + ? WHERE id=?",
+                    (delta, item['product_id'])
+                )
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        db.execute(
+            "UPDATE inventory_sessions SET status='completed', completed_at=? WHERE id=?",
+            (now, inv_id)
+        )
+        db.execute("COMMIT")
+        flash(f"Инвентаризация завершена. Скорректировано позиций: {len(items)}")
+    except Exception as e:
+        db.execute("ROLLBACK")
+        logger.exception("inventory_complete failed: %s", e)
+        flash("Ошибка при завершении инвентаризации.")
+    return redirect(url_for('inventory'))
+
+
+@app.route("/inventory/<int:inv_id>/delete", methods=["POST"])
+def inventory_delete(inv_id):
+    db = get_db()
+    db.execute("DELETE FROM inventory_sessions WHERE id=? AND status='draft'", (inv_id,))
+    db.commit()
+    return redirect(url_for('inventory'))
+
+
+# ── Error handlers ─────────────────────────────────────────
+@app.errorhandler(404)
+def not_found(e):
+    return render_template('errors/404.html'), 404
+
+@app.errorhandler(500)
+def server_error(e):
+    db = g.pop("db", None)
+    if db:
+        try:
+            db.execute("ROLLBACK")
+        except Exception:
+            pass
+        db.close()
+    logger.exception("Internal server error: %s", e)
+    return render_template('errors/500.html'), 500
+
+# ── Health check ────────────────────────────────────────────
+@app.route('/health')
+def health():
+    return {'status': 'ok', 'ts': datetime.now(timezone.utc).isoformat()}
+
+# ── PWA: Service Worker route (needs correct headers) ──────
+@app.route('/static/sw.js')
+def service_worker():
+    response = send_from_directory('static', 'sw.js')
+    response.headers['Service-Worker-Allowed'] = '/'
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
 
 if __name__ == "__main__":
     init_db()
-    # Добавляем host='0.0.0.0'
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    debug_mode = os.environ.get('FLASK_DEBUG', '0') == '1'
+    app.run(debug=debug_mode, host='0.0.0.0', port=5000)

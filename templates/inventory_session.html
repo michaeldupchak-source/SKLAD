@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}Инвентаризация #{{ session.id }}{% endblock %}
+{% block breadcrumb %}
+<a href="{{ url_for('inventory') }}" style="color:var(--text-muted);text-decoration:none">Инвентаризация</a>
+<span class="sep"> / </span><strong>#{{ session.id }}</strong>
+{% endblock %}
+
+{% block content %}
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+  <div style="background:var(--green-dim);border:1px solid rgba(62,207,142,0.3);border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:0.85rem;color:var(--green)">
+    {{ messages[0] }}
+  </div>
+  {% endif %}
+{% endwith %}
+
+<!-- Header banner -->
+<div style="display:flex;gap:14px;align-items:flex-start;padding:14px 16px;margin-bottom:20px;
+  background:{% if session.status=='draft' %}rgba(232,196,74,0.06){% else %}var(--green-dim){% endif %};
+  border:1px solid {% if session.status=='draft' %}rgba(232,196,74,0.25){% else %}rgba(62,207,142,0.25){% endif %};
+  border-radius:8px">
+  <span style="font-size:1.2rem;flex-shrink:0">{% if session.status=='draft' %}📋{% else %}✅{% endif %}</span>
+  <div style="flex:1">
+    <div style="font-family:var(--mono);font-size:0.7rem;color:var(--accent);letter-spacing:1px;margin-bottom:4px">
+      ИНВЕНТАРИЗАЦИЯ #{{ session.id }}
+      {% if session.status == 'completed' %}· ЗАВЕРШЕНА {{ session.completed_at|localdate }}{% endif %}
+    </div>
+    <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.5">
+      {% if session.status == 'draft' %}
+        Введите фактические остатки. Поля «Факт» можно заполнять частично — незаполненные строки будут пропущены при завершении.
+        Укажите причину для каждого расхождения. После нажатия «Завершить» все изменения применятся атомарно.
+      {% else %}
+        Инвентаризация завершена. Корректировки применены к остаткам.
+      {% endif %}
+    </div>
+  </div>
+  {% if session.status == 'draft' %}
+  <div style="display:flex;gap:8px;flex-shrink:0">
+    <button type="submit" form="main-form" name="save_action" value="save"
+      class="btn btn-ghost btn-sm">💾 Сохранить черновик</button>
+    <button type="submit" form="main-form" name="save_action" value="complete"
+      class="btn btn-primary btn-sm"
+      id="btn-complete-inv">✓ Завершить инвентаризацию</button>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Stats row -->
+{% set filled = items | selectattr('actual_qty') | list %}
+{% set discrepancies = [] %}
+{% for i in items %}{% if i.actual_qty is not none and i.delta and i.delta != 0 %}{% set _ = discrepancies.append(i) %}{% endif %}{% endfor %}
+<div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+  <div class="stat-card" style="flex:1;min-width:120px">
+    <div class="stat-label">Всего позиций</div>
+    <div class="stat-value">{{ items | length }}</div>
+  </div>
+  <div class="stat-card" style="flex:1;min-width:120px;border-color:var(--green)">
+    <div class="stat-label">Заполнено</div>
+    <div class="stat-value green">{{ filled | length }}</div>
+  </div>
+  <div class="stat-card" style="flex:1;min-width:120px;border-color:var(--accent)">
+    <div class="stat-label">Расхождений</div>
+    <div class="stat-value accent">{{ discrepancies | length }}</div>
+  </div>
+  {% set loss = namespace(v=0) %}
+  {% for i in discrepancies %}{% if i.delta < 0 and i.price %}{% set loss.v = loss.v + (i.delta | abs) * i.price %}{% endif %}{% endfor %}
+  {% if loss.v > 0 %}
+  <div class="stat-card" style="flex:1;min-width:140px;border-color:var(--red)">
+    <div class="stat-label">Потери (оценка)</div>
+    <div class="stat-value red" style="font-size:1.2rem">{{ "%.2f" | format(loss.v) }} ₽</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Main table -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Позиции инвентаризации</span>
+    {% if session.status == 'draft' %}
+    <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-muted);cursor:pointer;margin-left:auto">
+      <input type="checkbox" id="show-only-discrepancies" style="accent-color:var(--accent)">
+      Только расхождения
+    </label>
+    {% endif %}
+  </div>
+  <div class="table-wrap">
+    <form method="post" action="{{ url_for('inventory_session', inv_id=session.id) }}" id="main-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <table>
+        <thead>
+          <tr>
+            <th>Товар</th>
+            <th style="text-align:right;width:90px">Ожидается</th>
+            <th style="text-align:right;width:110px">Факт</th>
+            <th style="text-align:right;width:90px">Δ Разница</th>
+            <th style="width:180px">Причина</th>
+            <th style="text-align:right;width:110px">Цена / ед.</th>
+            <th style="text-align:right;width:110px">Сумма Δ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          {% set has_disc = item.actual_qty is not none and item.delta is not none and item.delta != 0 %}
+          <tr class="inv-row {% if has_disc %}has-disc{% endif %}"
+            data-id="{{ item.id }}"
+            {% if has_disc %}style="background:rgba(232,196,74,0.04)"{% endif %}>
+            <td>
+              <div style="font-weight:600">{{ item.product_name }}</div>
+              {% if item.unit_short %}<div style="font-size:0.72rem;color:var(--text-muted);font-family:var(--mono)">{{ item.unit_short }}</div>{% endif %}
+            </td>
+            <td style="text-align:right" class="td-mono">
+              <span style="color:var(--text-muted)">{{ "%.3g" | format(item.expected_qty) }}</span>
+            </td>
+            <td style="text-align:right">
+              {% if session.status == 'draft' %}
+              <input type="number" name="actual_{{ item.id }}" id="actual_{{ item.id }}"
+                value="{{ item.actual_qty if item.actual_qty is not none else '' }}"
+                min="0" step="any" placeholder="—"
+                class="actual-input"
+                data-id="{{ item.id }}"
+                data-expected="{{ item.expected_qty }}"
+                style="width:90px;text-align:right;font-family:var(--mono);background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 7px">
+              {% else %}
+              <span class="td-mono">{{ "%.3g" | format(item.actual_qty) if item.actual_qty is not none else '—' }}</span>
+              {% endif %}
+            </td>
+            <td style="text-align:right" class="td-mono" id="delta_{{ item.id }}">
+              {% if item.delta is not none and item.delta != 0 %}
+              <span style="font-weight:700;color:{% if item.delta > 0 %}var(--green){% else %}var(--red){% endif %}">
+                {% if item.delta > 0 %}+{% endif %}{{ "%.3g" | format(item.delta) }}
+              </span>
+              {% elif item.actual_qty is not none %}
+              <span class="text-muted">0</span>
+              {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td id="reason_cell_{{ item.id }}">
+              {% if session.status == 'draft' %}
+              <select name="reason_{{ item.id }}" id="reason_{{ item.id }}"
+                style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 6px;font-size:0.8rem"
+                {% if item.actual_qty is none or item.delta == 0 %}disabled{% endif %}>
+                <option value="">— не указана —</option>
+                {% for val, label in reasons %}
+                <option value="{{ val }}" {% if item.reason == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              {% else %}
+              <span class="text-muted text-sm">
+                {% for val, label in reasons %}{% if item.reason == val %}{{ label }}{% endif %}{% endfor %}
+                {% if not item.reason %}—{% endif %}
+              </span>
+              {% endif %}
+            </td>
+            <td style="text-align:right" id="price_cell_{{ item.id }}">
+              {% if session.status == 'draft' %}
+              <input type="number" name="price_{{ item.id }}" id="price_{{ item.id }}"
+                value="{{ item.price if item.price else '' }}"
+                min="0" step="0.01" placeholder="авто"
+                style="width:90px;text-align:right;font-family:var(--mono);background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 7px">
+              {% else %}
+              <span class="td-mono text-muted">{{ "%.2f" | format(item.price) ~ ' ₽' if item.price else '—' }}</span>
+              {% endif %}
+            </td>
+            <td style="text-align:right" class="td-mono" id="sum_{{ item.id }}">
+              {% if item.delta is not none and item.delta != 0 and item.price %}
+              {% set adj_sum = item.delta | abs * item.price %}
+              <span style="color:{% if item.delta < 0 %}var(--red){% else %}var(--green){% endif %}">
+                {% if item.delta < 0 %}−{% else %}+{% endif %}{{ "%.2f" | format(adj_sum) }} ₽
+              </span>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </form>
+  </div>
+</div>
+
+{% if session.status == 'draft' %}
+<script>
+// Live delta calculation
+document.querySelectorAll('.actual-input').forEach(function(input) {
+  input.addEventListener('input', function() {
+    var id       = this.dataset.id;
+    var expected = parseFloat(this.dataset.expected) || 0;
+    var actual   = this.value === '' ? null : parseFloat(this.value);
+    var deltaEl  = document.getElementById('delta_' + id);
+    var reasonEl = document.getElementById('reason_' + id);
+    var sumEl    = document.getElementById('sum_' + id);
+    var priceEl  = document.getElementById('price_' + id);
+    var row      = this.closest('tr');
+
+    if (actual === null || isNaN(actual)) {
+      deltaEl.innerHTML = '<span class="text-muted">—</span>';
+      if (reasonEl) { reasonEl.disabled = true; reasonEl.value = ''; }
+      row.style.background = '';
+      row.classList.remove('has-disc');
+      sumEl.innerHTML = '—';
+      return;
+    }
+
+    var delta = actual - expected;
+    if (delta === 0) {
+      deltaEl.innerHTML = '<span class="text-muted">0</span>';
+      if (reasonEl) { reasonEl.disabled = true; reasonEl.value = ''; }
+      row.style.background = '';
+      row.classList.remove('has-disc');
+      sumEl.innerHTML = '—';
+    } else {
+      var sign  = delta > 0 ? '+' : '';
+      var color = delta > 0 ? 'var(--green)' : 'var(--red)';
+      deltaEl.innerHTML = '<span style="font-weight:700;color:' + color + '">' + sign + delta.toFixed(3).replace(/\.?0+$/, '') + '</span>';
+      if (reasonEl) reasonEl.disabled = false;
+      row.style.background = 'rgba(232,196,74,0.04)';
+      row.classList.add('has-disc');
+      // Update sum
+      var price = priceEl ? parseFloat(priceEl.value) : NaN;
+      if (!isNaN(price) && price > 0) {
+        var adjSum = Math.abs(delta) * price;
+        var sumSign = delta < 0 ? '−' : '+';
+        var sumColor = delta < 0 ? 'var(--red)' : 'var(--green)';
+        sumEl.innerHTML = '<span style="color:' + sumColor + '">' + sumSign + adjSum.toFixed(2) + ' ₽</span>';
+      } else {
+        sumEl.innerHTML = '—';
+      }
+    }
+  });
+
+  // Also update sum when price changes
+  var id = input.dataset.id;
+  var priceEl = document.getElementById('price_' + id);
+  if (priceEl) {
+    priceEl.addEventListener('input', function() { input.dispatchEvent(new Event('input')); });
+  }
+});
+
+// Filter: show only discrepancies
+document.getElementById('show-only-discrepancies').addEventListener('change', function() {
+  document.querySelectorAll('.inv-row').forEach(function(row) {
+    if (this.checked && !row.classList.contains('has-disc')) {
+      row.style.display = 'none';
+    } else {
+      row.style.display = '';
+    }
+  }, this);
+});
+
+// Confirm complete — uses global WMS dialog instead of browser confirm()
+document.getElementById('btn-complete-inv').addEventListener('click', function(e) {
+  e.preventDefault();
+  var discCount = document.querySelectorAll('.inv-row.has-disc').length;
+  var msg = discCount > 0
+    ? 'Будет создана корректирующая операция для ' + discCount + ' позиций.\nОстатки изменятся необратимо.'
+    : 'Расхождений не обнаружено. Остатки останутся без изменений.';
+  var btn = this;
+  wmsConfirm({
+    title:   'Завершить инвентаризацию?',
+    message: msg,
+    type:    discCount > 0 ? 'warning' : 'info',
+    okText:  'Завершить',
+  }).then(function(ok) {
+    if (ok) {
+      btn.form.querySelector('[name=save_action][value=complete]') || (function(){
+        var h = document.createElement('input');
+        h.type='hidden'; h.name='save_action'; h.value='complete';
+        btn.form.appendChild(h);
+      })();
+      btn.form._wmsOk = true;
+      btn.form.submit();
+    }
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

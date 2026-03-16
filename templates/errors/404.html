@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block title %}404 — Страница не найдена{% endblock %}
+{% block content %}
+<div style="text-align:center; padding:4rem 1rem;">
+  <h1 style="font-size:5rem; margin:0; opacity:0.3;">404</h1>
+  <h2>Страница не найдена</h2>
+  <p style="opacity:0.6;">Запрошенный ресурс не существует.</p>
+  <a href="{{ url_for('stock') }}" class="btn btn-primary" style="margin-top:1rem;">← На главную</a>
+</div>
+{% endblock %}

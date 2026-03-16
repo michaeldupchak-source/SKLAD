@@ -47,6 +47,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="theme">
     <div style="display:flex;gap:12px;margin-bottom:16px">
+      <!-- Dark -->
       <label style="cursor:pointer;flex:1">
         <input type="radio" name="theme" value="dark" {% if current_theme=='dark' %}checked{% endif %} style="display:none" class="theme-radio">
         <div class="theme-card" data-theme-val="dark" style="border:2px solid {% if current_theme=='dark' %}var(--accent){% else %}var(--border){% endif %};
@@ -66,6 +67,7 @@
           {% endif %}
         </div>
       </label>
+      <!-- Light -->
       <label style="cursor:pointer;flex:1">
         <input type="radio" name="theme" value="light" {% if current_theme=='light' %}checked{% endif %} style="display:none" class="theme-radio">
         <div class="theme-card" data-theme-val="light" style="border:2px solid {% if current_theme=='light' %}var(--accent){% else %}var(--border){% endif %};
@@ -85,13 +87,43 @@
           {% endif %}
         </div>
       </label>
+      <!-- System -->
+      <label style="cursor:pointer;flex:1">
+        <input type="radio" name="theme" value="system" {% if current_theme=='system' or not current_theme %}checked{% endif %} style="display:none" class="theme-radio">
+        <div class="theme-card" data-theme-val="system" style="border:2px solid {% if current_theme=='system' or not current_theme %}var(--accent){% else %}var(--border){% endif %};
+          border-radius:8px;padding:16px;background:{% if current_theme=='system' or not current_theme %}var(--accent-dim){% else %}transparent{% endif %};
+          transition:all 0.15s;cursor:pointer">
+          <div style="width:100%;height:48px;border-radius:5px;margin-bottom:8px;overflow:hidden;position:relative">
+            <div style="position:absolute;left:0;top:0;width:50%;height:100%;background:#0d0f12;
+              display:flex;gap:4px;padding:8px;box-sizing:border-box">
+              <div style="width:30%;background:#141720;border-radius:2px"></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:3px;padding-top:2px">
+                <div style="height:6px;background:#1c2030;border-radius:2px"></div>
+                <div style="height:6px;background:#1c2030;border-radius:2px;width:70%"></div>
+              </div>
+            </div>
+            <div style="position:absolute;right:0;top:0;width:50%;height:100%;background:#f5f6fa;
+              display:flex;gap:4px;padding:8px;box-sizing:border-box">
+              <div style="width:30%;background:#e8eaf0;border-radius:2px"></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:3px;padding-top:2px">
+                <div style="height:6px;background:#dde0ea;border-radius:2px"></div>
+                <div style="height:6px;background:#dde0ea;border-radius:2px;width:70%"></div>
+              </div>
+            </div>
+          </div>
+          <div style="font-size:0.8rem;font-weight:600;text-align:center">Как в системе</div>
+          {% if current_theme=='system' or not current_theme %}
+          <div style="text-align:center;margin-top:4px;font-size:0.65rem;font-family:var(--mono);color:var(--accent)">АКТИВНА</div>
+          {% endif %}
+        </div>
+      </label>
     </div>
     <button type="submit" class="btn btn-primary btn-sm">Применить тему</button>
   </form>
 </div>
 
 <!-- Change password -->
-<div class="card">
+<div class="card mb-20">
   <div class="card-title" style="margin-bottom:16px">Смена пароля</div>
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -116,7 +148,70 @@
 
 <!-- Right column: Users (admin only) -->
 {% if current_user.role == 'admin' %}
-<div class="card">
+
+<!-- Branding -->
+<div class="card mb-20" style="margin-bottom:20px">
+  <div class="card-header" style="margin-bottom:16px">
+    <span class="card-title">Организация</span>
+  </div>
+  <form method="post" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="branding">
+
+    <div class="form-group">
+      <label>Название организации</label>
+      <input type="text" name="org_name" value="{{ s_org_name }}" placeholder="WMS" maxlength="40">
+      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:5px">Отображается в левом меню</div>
+    </div>
+
+    <div class="form-group">
+      <label>Подпись (необязательно)</label>
+      <input type="text" name="org_subtitle" value="{{ s_org_subtitle }}" placeholder="Складской учёт" maxlength="40">
+    </div>
+
+    <div class="form-group">
+      <label>Логотип</label>
+      <!-- Preview -->
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px">
+        <div id="logo-preview-wrap" style="width:44px;height:44px;border-radius:8px;
+          background:var(--accent);display:flex;align-items:center;justify-content:center;
+          overflow:hidden;border:1px solid var(--border);flex-shrink:0">
+          {% if s_org_logo %}
+            <img id="logo-preview-img" src="{{ url_for('uploaded_file', filename=s_org_logo) }}"
+                 style="width:100%;height:100%;object-fit:cover" alt="logo">
+          {% else %}
+            <span id="logo-preview-letter"
+                  style="font-family:var(--mono);font-size:1.1rem;font-weight:700;color:#111">
+              {{ (s_org_name[0] if s_org_name else 'W') | upper }}
+            </span>
+          {% endif %}
+        </div>
+        <div style="flex:1">
+          <input type="file" name="org_logo" id="logo-file-input" accept=".png,.jpg,.jpeg,.gif,.webp,.svg"
+                 style="width:100%;font-size:0.82rem">
+          <div style="font-size:0.7rem;color:var(--text-muted);margin-top:5px">
+            PNG, JPG, SVG, WebP · макс. 1 МБ · рекомендуется квадратный формат
+          </div>
+        </div>
+      </div>
+      {% if s_org_logo %}
+      <form method="post" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="delete_logo">
+        <button type="submit" class="btn btn-danger btn-xs"
+                data-confirm-message="Удалить логотип? Вместо него будет показана буква названия."
+                data-confirm-title="Удалить логотип?"
+                data-confirm-type="danger"
+                data-confirm-ok="Удалить">✕ Удалить логотип</button>
+      </form>
+      {% endif %}
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
+  </form>
+</div>
+
+<div class="card mb-20">
   <div class="card-header" style="margin-bottom:16px">
     <span class="card-title">Пользователи</span>
   </div>
@@ -152,10 +247,10 @@
               {{ 'ADMIN' if u.role == 'admin' else 'USER' }}
             </span>
           </td>
-          <td class="td-mono text-muted" style="font-size:0.75rem">{{ u.created_at[:10].replace('-','.') }}</td>
+          <td class="td-mono text-muted" style="font-size:0.75rem">{{ u.created_at|localdate }}</td>
           <td>
             {% if u.id != current_user.id %}
-            <form method="post" onsubmit="return confirm('Удалить пользователя {{ u.username }}?')">
+            <form method="post" data-confirm-message="Удалить пользователя {{ u.username }}? Это действие нельзя отменить." data-confirm-title="Удалить пользователя?" data-confirm-type="danger" data-confirm-ok="Удалить">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="action" value="delete_user">
               <input type="hidden" name="user_id" value="{{ u.id }}">
@@ -200,6 +295,41 @@
 
 </div><!-- /grid -->
 
+{% if current_user.role == 'admin' %}
+<div class="card mb-20">
+  <div class="card-title" style="margin-bottom:4px">⚠ Умный расчёт опасного остатка</div>
+  <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:16px;line-height:1.5">
+    Товары с остатком ниже среднего расхода за указанный период подсвечиваются в разделе <strong>Наличие</strong>.
+  </div>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="danger_stock">
+    <div class="grid-2" style="gap:20px;margin-bottom:20px">
+      <div class="form-group mb-0">
+        <label>Режим расчёта</label>
+        <select name="danger_stock_mode">
+          <option value="recent"  {% if danger_mode == 'recent'  %}selected{% endif %}>За последние N недель</option>
+          <option value="alltime" {% if danger_mode == 'alltime' %}selected{% endif %}>За всё время ÷ N недель</option>
+        </select>
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:6px;line-height:1.4">
+          <strong>За последние N:</strong> учитывает только недавние расходы — точнее для сезонных товаров.<br>
+          <strong>За всё время:</strong> усредняет всю историю — стабильнее для товаров с редкими операциями.
+        </div>
+      </div>
+      <div class="form-group mb-0">
+        <label>Количество недель (N)</label>
+        <input type="number" name="danger_stock_weeks" value="{{ danger_weeks }}" min="1" max="52" step="1" style="max-width:120px">
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:6px;line-height:1.4">
+          Порог = средний расход за 1 неделю по выбранному режиму.<br>
+          Рекомендуется: <strong>2–4 недели</strong>.
+        </div>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
+  </form>
+</div>
+{% endif %}
+
 <script>
 // Highlight selected theme card on click
 document.querySelectorAll('.theme-radio').forEach(radio => {
@@ -213,5 +343,43 @@ document.querySelectorAll('.theme-radio').forEach(radio => {
     card.style.background  = 'var(--accent-dim)';
   });
 });
+
+// Live logo preview
+const logoInput = document.getElementById('logo-file-input');
+if (logoInput) {
+  logoInput.addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    const wrap   = document.getElementById('logo-preview-wrap');
+    const letter = document.getElementById('logo-preview-letter');
+    const img    = document.getElementById('logo-preview-img');
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      if (img) {
+        img.src = e.target.result;
+      } else {
+        // Replace letter with img
+        if (letter) letter.remove();
+        const newImg = document.createElement('img');
+        newImg.id = 'logo-preview-img';
+        newImg.style.cssText = 'width:100%;height:100%;object-fit:cover';
+        newImg.src = e.target.result;
+        wrap.appendChild(newImg);
+      }
+      wrap.style.background = 'transparent';
+      wrap.style.padding = '0';
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Update letter preview when org_name changes
+const orgNameInput = document.querySelector('input[name=org_name]');
+if (orgNameInput) {
+  orgNameInput.addEventListener('input', function() {
+    const letter = document.getElementById('logo-preview-letter');
+    if (letter) letter.textContent = (this.value[0] || 'W').toUpperCase();
+  });
+}
 </script>
 {% endblock %}

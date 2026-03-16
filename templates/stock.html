@@ -21,6 +21,15 @@
     <div class="stat-label">Стоимость склада (по посл. ценам)</div>
     <div class="stat-value accent" style="font-size:1.4rem">{{ "%.2f" | format(total_stock_value) }} ₽</div>
   </div>
+  {% set danger_count = products | selectattr('current_stock', 'gt', 0) | list | selectattr('id', 'in', danger_thresholds.keys()) | list | length %}
+  {% set danger_count = namespace(v=0) %}
+  {% for p in products %}{% if danger_thresholds.get(p.id, 0) > 0 and p.current_stock > 0 and p.current_stock < danger_thresholds.get(p.id) %}{% set danger_count.v = danger_count.v + 1 %}{% endif %}{% endfor %}
+  {% if danger_count.v > 0 %}
+  <div class="stat-card" style="border-color:var(--accent);background:var(--accent-dim)">
+    <div class="stat-label">⚠ Малый остаток</div>
+    <div class="stat-value accent">{{ danger_count.v }}</div>
+  </div>
+  {% endif %}
 </div>
 
 <!-- Filters -->
@@ -79,13 +88,20 @@
       <tbody>
         {% for p in products %}
         {% set stock_val = (p.current_stock * p.last_price) if (p.current_stock > 0 and p.last_price) else 0 %}
-        <tr>
+        {% set threshold = danger_thresholds.get(p.id, 0) %}
+        {% set is_danger = threshold > 0 and p.current_stock > 0 and p.current_stock < threshold %}
+        <tr {% if is_danger %}style="background:rgba(232,196,74,0.05);border-left:2px solid rgba(232,196,74,0.4)"{% endif %}>
           <td>
             <div style="display:flex;align-items:center;gap:10px">
-              <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:{% if p.current_stock > 0 %}var(--green){% elif p.current_stock < 0 %}var(--red){% else %}var(--text-muted){% endif %};box-shadow:{% if p.current_stock > 0 %}0 0 6px var(--green){% else %}none{% endif %}"></span>
+              <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:{% if is_danger %}var(--accent){% elif p.current_stock > 0 %}var(--green){% elif p.current_stock < 0 %}var(--red){% else %}var(--text-muted){% endif %};box-shadow:{% if is_danger %}0 0 6px var(--accent){% elif p.current_stock > 0 %}0 0 6px var(--green){% else %}none{% endif %}"></span>
               <a href="{{ url_for('stats_detail') }}?product_id={{ p.id }}" style="color:var(--text);text-decoration:none;font-weight:600">
                 {{ p.name }}
               </a>
+              {% if is_danger %}
+              <span title="Остаток ниже среднего расхода за {{ danger_weeks }} нед." style="font-size:0.7rem;background:var(--accent-dim);color:var(--accent);border:1px solid rgba(232,196,74,0.3);border-radius:4px;padding:1px 6px;font-family:var(--mono);white-space:nowrap">
+                ⚠ малый остаток
+              </span>
+              {% endif %}
             </div>
           </td>
           <td class="text-muted text-sm">
@@ -96,7 +112,7 @@
           <td style="text-align:right;background:var(--surface2);border-left:2px solid var(--border2);border-right:2px solid var(--border2);padding-top:14px;padding-bottom:14px">
             <span class="td-mono" style="
               font-size:1rem;font-weight:700;letter-spacing:-0.5px;
-              color:{% if p.current_stock > 0 %}var(--green){% elif p.current_stock < 0 %}var(--red){% else %}var(--text-muted){% endif %}
+              color:{% if is_danger %}var(--accent){% elif p.current_stock > 0 %}var(--green){% elif p.current_stock < 0 %}var(--red){% else %}var(--text-muted){% endif %}
             ">
               {{ "%.3g" | format(p.current_stock) }}{% if p.unit_short %} <span style="font-weight:400;font-size:0.75rem;opacity:0.8">{{ p.unit_short }}</span>{% endif %}
             </span>
@@ -111,8 +127,8 @@
           </td>
           <td style="text-align:right" class="td-mono text-muted" style="font-size:0.75rem;white-space:nowrap">
             {% if p.last_op_date %}
-            {{ p.last_op_date[:10].replace('-','.') }}
-            <span style="opacity:0.6">{{ p.last_op_date[11:16] }}</span>
+            {{ p.last_op_date|localdate }}
+            <span style="opacity:0.6">{{ p.last_op_date|localtime }}</span>
             {% else %}—{% endif %}
           </td>
         </tr>
