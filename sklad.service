@@ -1,0 +1,21 @@
+[Unit]
+Description=SKLAD — Flask Warehouse App
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/sklad
+EnvironmentFile=/var/www/sklad/.env
+ExecStart=/var/www/sklad/.venv/bin/gunicorn \
+    --workers 2 \
+    --bind 127.0.0.1:5000 \
+    --timeout 120 \
+    --access-logfile /var/log/sklad/access.log \
+    --error-logfile /var/log/sklad/error.log \
+    app:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
