@@ -9,6 +9,7 @@
   <div class="modal">
     <div class="modal-title">Новая категория</div>
     <form method="post" action="{{ url_for('create_category') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label>Название</label>
         <input type="text" name="name" required autofocus placeholder="Например: Электроника">
@@ -29,6 +30,7 @@
   <div class="modal">
     <div class="modal-title">Редактировать категорию</div>
     <form method="post" :action="'/categories/'+editId+'/update'">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label>Название</label>
         <input type="text" name="name" x-model="editName" required>
@@ -78,6 +80,7 @@
                 data-confirm-title="Удалить категорию?"
                 data-confirm-type="danger"
                 data-confirm-ok="Удалить">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-danger btn-sm">✕</button>
               </form>
             </div>

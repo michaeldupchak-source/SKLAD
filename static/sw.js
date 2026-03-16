@@ -1,12 +1,12 @@
-// SKLAD Service Worker — v1.0
-// Стратегия: Cache-First для статики, Network-First для API/данных
+// SKLAD Service Worker — v1.1
+// Стратегия: Cache-First для статики, Network-First для всех HTML-страниц.
+// Складское приложение требует актуальных данных — staleWhileRevalidate
+// намеренно убрана: она возвращала кэш после POST-редиректа и страница
+// не обновлялась без физического F5.
 
-const STATIC_CACHE = 'sklad-static-v1';
-const DATA_CACHE   = 'sklad-data-v1';
+const STATIC_CACHE = 'sklad-static-v2';
 
 const STATIC_ASSETS = [
-  '/',
-  '/stock',
   '/static/manifest.json',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
@@ -23,13 +23,13 @@ self.addEventListener('install', event => {
   );
 });
 
-// ── Activate ──────────────────────────────────────────────
+// ── Activate — удаляем все старые кэши ───────────────────
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
         keys
-          .filter(k => k !== STATIC_CACHE && k !== DATA_CACHE)
+          .filter(k => k !== STATIC_CACHE)
           .map(k => { console.log('[SW] Deleting old cache:', k); return caches.delete(k); })
       )
     ).then(() => self.clients.claim())
@@ -42,24 +42,15 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   if (!url.protocol.startsWith('http')) return;
 
-  // API и мутирующие роуты — всегда сеть
-  if (isDataRoute(url.pathname)) {
-    event.respondWith(networkFirst(event.request));
-    return;
-  }
-  // Статика — кэш
+  // Статика — cache-first (иконки, CSS, JS, манифест)
   if (url.pathname.startsWith('/static/')) {
     event.respondWith(cacheFirst(event.request));
     return;
   }
-  // Страницы — stale-while-revalidate
-  event.respondWith(staleWhileRevalidate(event.request));
-});
 
-function isDataRoute(p) {
-  return ['/api/', '/operations', '/products/add', '/products/edit', '/login', '/logout']
-    .some(r => p.startsWith(r));
-}
+  // Все HTML-страницы — network-first (всегда свежие данные)
+  event.respondWith(networkFirst(event.request));
+});
 
 async function cacheFirst(req) {
   const cached = await caches.match(req);
@@ -74,18 +65,11 @@ async function cacheFirst(req) {
 async function networkFirst(req) {
   try {
     const res = await fetch(req);
-    if (res.ok) (await caches.open(DATA_CACHE)).put(req, res.clone());
     return res;
   } catch {
-    return (await caches.match(req)) || offlinePage();
+    const cached = await caches.match(req);
+    return cached || offlinePage();
   }
-}
-
-async function staleWhileRevalidate(req) {
-  const cache  = await caches.open(DATA_CACHE);
-  const cached = await cache.match(req);
-  const fetchP = fetch(req).then(res => { if (res.ok) cache.put(req, res.clone()); return res; }).catch(() => null);
-  return cached || await fetchP || offlinePage();
 }
 
 function offlinePage() {

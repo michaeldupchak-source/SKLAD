@@ -9,6 +9,7 @@
   <div class="modal">
     <div class="modal-title">Новая единица измерения</div>
     <form method="post" action="{{ url_for('create_unit') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label>Полное название</label>
         <input type="text" name="name" required autofocus placeholder="Килограмм">
@@ -29,6 +30,7 @@
   <div class="modal">
     <div class="modal-title">Редактировать единицу</div>
     <form method="post" :action="'/units/'+editId+'/update'">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label>Полное название</label>
         <input type="text" name="name" x-model="editName" required>
@@ -80,6 +82,7 @@
                 data-confirm-title="Удалить?"
                 data-confirm-type="danger"
                 data-confirm-ok="Удалить">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-danger btn-sm">✕</button>
               </form>
             </div>
