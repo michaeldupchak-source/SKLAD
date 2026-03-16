@@ -135,6 +135,7 @@
                 data-confirm-title="Удалить операцию?"
                 data-confirm-type="danger"
                 data-confirm-ok="Удалить">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
               </form>
             </div>
