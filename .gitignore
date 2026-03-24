@@ -47,3 +47,6 @@ logs/
 dist/
 build/
 *.egg-info/
+
+# ── Uploads (runtime user files) ──────────────────────────
+static/uploads/
