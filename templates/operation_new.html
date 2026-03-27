@@ -41,7 +41,8 @@ var STOCK_MAP = {{ stock_map | tojson }};
   }
 }" style="max-width:900px">
 
-<form method="post" action="{{ url_for('create_operation') }}">
+<form method="post" action="{{ url_for('create_operation') }}"
+  @keydown.enter="if($event.target.tagName !== 'TEXTAREA' && $event.target.type !== 'submit') { $event.preventDefault(); addRow(); }">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
 <!-- Type selector -->
