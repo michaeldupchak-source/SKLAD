@@ -6,21 +6,17 @@
 
 ## Быстрый старт (автоматическая установка)
 
-Для установки на чистый Ubuntu-сервер достаточно одной команды:
+Для установки на чистый Ubuntu-сервер скачайте и запустите скрипт. Он интерактивно запросит домен, репозиторий и порты для запуска:
 
 ```bash
-# Скачать и запустить setup.sh
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/SKLAD/main/setup.sh \
-  | sudo bash -s -- \
-    --domain sklad.example.com \
-    --repo https://github.com/YOUR_USERNAME/SKLAD.git
+# Скачать скрипт
+wget https://raw.githubusercontent.com/YOUR_USERNAME/SKLAD/main/setup.sh
 
-# С SSL-сертификатом (нужен реальный домен, направленный на сервер)
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/SKLAD/main/setup.sh \
-  | sudo bash -s -- \
-    --domain sklad.example.com \
-    --repo https://github.com/YOUR_USERNAME/SKLAD.git \
-    --ssl
+# Запустить интерактивную установку
+sudo bash setup.sh
+
+# С SSL-сертификатом (нужен реальный домен, направленный на сервер, и порт 80)
+sudo bash setup.sh --ssl
 ```
 
 Скрипт сделает всё сам: установит зависимости, создаст пользователя, развернёт приложение,

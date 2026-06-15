@@ -70,8 +70,21 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -z "$DOMAIN" ]] && die "Укажи --domain (например: --domain sklad.example.com)"
-[[ -z "$REPO"   ]] && die "Укажи --repo (например: --repo https://github.com/user/SKLAD.git)"
+if [[ -z "$DOMAIN" ]]; then
+  read -p "Введите домен или IP-адрес для доступа к приложению: " DOMAIN
+  [[ -z "$DOMAIN" ]] && die "Домен/IP не может быть пустым"
+fi
+
+if [[ -z "$REPO" ]]; then
+  read -p "Введите URL git-репозитория: " REPO
+  [[ -z "$REPO" ]] && die "URL репозитория не может быть пустым"
+fi
+
+read -p "Укажите внешний порт Nginx (по умолчанию 80): " NGINX_PORT
+NGINX_PORT=${NGINX_PORT:-80}
+
+read -p "Укажите внутренний порт Gunicorn (по умолчанию 5000): " APP_PORT
+APP_PORT=${APP_PORT:-5000}
 
 # ── Проверка root ──────────────────────────────────────────────────────────────
 [[ $EUID -ne 0 ]] && die "Запусти скрипт от root: sudo bash setup.sh ..."
@@ -189,6 +202,7 @@ sed \
   -e "s|User=www-data|User=$APP_USER|g" \
   -e "s|Group=www-data|Group=$APP_USER|g" \
   -e "s|/var/www/sklad|$APP_DIR|g" \
+  -e "s|YOUR_APP_PORT|$APP_PORT|g" \
   "$SERVICE_SRC" > "$SERVICE_DST"
 
 systemctl daemon-reload
@@ -215,6 +229,8 @@ NGINX_LINK="/etc/nginx/sites-enabled/sklad"
 sed \
   -e "s|YOUR_DOMAIN|$DOMAIN|g" \
   -e "s|/var/www/sklad|$APP_DIR|g" \
+  -e "s|YOUR_NGINX_PORT|$NGINX_PORT|g" \
+  -e "s|YOUR_APP_PORT|$APP_PORT|g" \
   "$NGINX_SRC" > "$NGINX_DST"
 
 # Активируем сайт

@@ -96,26 +96,21 @@ python app.py
 
 ### Быстрая установка (одна команда)
 
-Для чистого Ubuntu-сервера достаточно одной команды:
+Для чистого Ubuntu-сервера достаточно скачать и запустить скрипт установки. Скрипт интерактивно запросит нужные параметры (домен, URL репозитория, порты):
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/SKLAD/main/setup.sh \
-  | sudo bash -s -- \
-    --domain sklad.example.com \
-    --repo https://github.com/YOUR_USERNAME/SKLAD.git
+wget https://raw.githubusercontent.com/YOUR_USERNAME/SKLAD/main/setup.sh
+sudo bash setup.sh
 ```
 
-С SSL-сертификатом (Let's Encrypt):
+С SSL-сертификатом (Let's Encrypt) — требует чтобы домен смотрел на IP сервера и Nginx порт был 80:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/SKLAD/main/setup.sh \
-  | sudo bash -s -- \
-    --domain sklad.example.com \
-    --repo https://github.com/YOUR_USERNAME/SKLAD.git \
-    --ssl
+sudo bash setup.sh --ssl
 ```
 
 Скрипт автоматически:
+- Спросит домен, репозиторий и порты (Nginx и Gunicorn)
 - Установит зависимости (python3, nginx, certbot)
 - Создаст системного пользователя `deploy`
 - Склонирует репозиторий и создаст виртуальное окружение
@@ -123,12 +118,12 @@ curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/SKLAD/main/setup.sh \
 - Настроит systemd-сервис и nginx
 - Опционально получит SSL-сертификат
 
-### Параметры setup.sh
+### Параметры setup.sh (можно передавать флагами)
 
 | Параметр | По умолчанию | Описание |
 |----------|-------------|----------|
-| `--domain` | — | Домен или IP (обязательно) |
-| `--repo` | — | Git URL репозитория (обязательно) |
+| `--domain` | интерактивно | Домен или IP |
+| `--repo` | интерактивно | Git URL репозитория |
 | `--user` | `deploy` | Системный пользователь |
 | `--dir` | `/var/www/sklad` | Директория приложения |
 | `--branch` | `main` | Git-ветка |

@@ -9,7 +9,7 @@ WorkingDirectory=/var/www/sklad
 EnvironmentFile=/var/www/sklad/.env
 ExecStart=/var/www/sklad/.venv/bin/gunicorn \
     --workers 2 \
-    --bind 127.0.0.1:5000 \
+    --bind 127.0.0.1:YOUR_APP_PORT \
     --timeout 120 \
     --access-logfile /var/log/sklad/access.log \
     --error-logfile /var/log/sklad/error.log \
