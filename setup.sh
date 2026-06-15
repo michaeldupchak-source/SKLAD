@@ -75,10 +75,8 @@ if [[ -z "$DOMAIN" ]]; then
   [[ -z "$DOMAIN" ]] && die "Домен/IP не может быть пустым"
 fi
 
-if [[ -z "$REPO" ]]; then
-  read -p "Введите URL git-репозитория: " REPO
-  [[ -z "$REPO" ]] && die "URL репозитория не может быть пустым"
-fi
+# Жестко заданный репозиторий (чтобы не вводить каждый раз)
+REPO=${REPO:-"https://github.com/michaeldupchak-source/SKLAD.git"}
 
 read -p "Укажите внешний порт Nginx (по умолчанию 80): " NGINX_PORT
 NGINX_PORT=${NGINX_PORT:-80}

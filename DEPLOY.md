@@ -6,11 +6,11 @@
 
 ## Быстрый старт (автоматическая установка)
 
-Для установки на чистый Ubuntu-сервер скачайте и запустите скрипт. Он интерактивно запросит домен, репозиторий и порты для запуска:
+Для установки на чистый Ubuntu-сервер скачайте и запустите скрипт. Он интерактивно запросит домен и порты для запуска:
 
 ```bash
 # Скачать скрипт
-wget https://raw.githubusercontent.com/YOUR_USERNAME/SKLAD/main/setup.sh
+wget https://raw.githubusercontent.com/michaeldupchak-source/SKLAD/main/setup.sh
 
 # Запустить интерактивную установку
 sudo bash setup.sh
