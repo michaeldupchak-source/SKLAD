@@ -4,6 +4,32 @@
 
 ---
 
+## Быстрый старт (автоматическая установка)
+
+Для установки на чистый Ubuntu-сервер достаточно одной команды:
+
+```bash
+# Скачать и запустить setup.sh
+curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/SKLAD/main/setup.sh \
+  | sudo bash -s -- \
+    --domain sklad.example.com \
+    --repo https://github.com/YOUR_USERNAME/SKLAD.git
+
+# С SSL-сертификатом (нужен реальный домен, направленный на сервер)
+curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/SKLAD/main/setup.sh \
+  | sudo bash -s -- \
+    --domain sklad.example.com \
+    --repo https://github.com/YOUR_USERNAME/SKLAD.git \
+    --ssl
+```
+
+Скрипт сделает всё сам: установит зависимости, создаст пользователя, развернёт приложение,
+настроит systemd и nginx. В конце покажет инструкцию по настройке GitHub Actions.
+
+> Ручные шаги (Шаги 1-5 ниже) нужны только если хочешь настроить что-то по-своему.
+
+---
+
 ## Структура на VPS
 
 ```
