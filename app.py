@@ -32,7 +32,12 @@ def validate_password(password):
         return 'Пароль должен содержать хотя бы одну цифру'
     return None
 
+from werkzeug.middleware.proxy_fix import ProxyFix
+
 app = Flask(__name__)
+# Исправление для корректной работы CSRF и HTTPS за Nginx (Reverse Proxy)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
 # Read secret key from environment; fall back to a random key in development.
 _secret = os.environ.get('SECRET_KEY')
 if _secret:
