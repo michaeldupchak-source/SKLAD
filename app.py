@@ -1721,8 +1721,12 @@ def service_worker():
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response
 
+# Инициализация БД при импорте (для Gunicorn)
+try:
+    init_db()
+except Exception as e:
+    print(f"DB Init Error: {e}")
 
 if __name__ == "__main__":
-    init_db()
     debug_mode = os.environ.get('FLASK_DEBUG', '0') == '1'
     app.run(debug=debug_mode, host='0.0.0.0', port=5000)
